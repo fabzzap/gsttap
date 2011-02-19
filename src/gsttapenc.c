@@ -207,10 +207,10 @@ gst_tapenc_set_property (GObject * object, guint prop_id,
       filter->min_duration = g_value_get_uint (value);
       break;
     case PROP_SENSITIVITY:
-      filter->sensitivity = g_value_get_uchar (value);
+      filter->sensitivity = (guchar) g_value_get_uint (value);
       break;
     case PROP_INITIAL_THRESHOLD:
-      filter->initial_threshold = g_value_get_uchar (value);
+      filter->initial_threshold = (guchar) g_value_get_uint (value);
       break;
     case PROP_TRIGGER_ON_RISING_EDGE:
       filter->trigger_on_rising_edge = g_value_get_boolean (value);
@@ -296,12 +296,6 @@ gst_tapenc_sink_event (GstPad * pad, GstEvent * event)
   return gst_pad_event_default (pad, event);
 }
 
-#define MIN_DURATION_DEFAULT 0
-#define SENSITIVITY_DEFAULT 12
-#define TRIGGER_ON_RISING_EDGE_DEFAULT TRUE
-#define SEMIWAVES_DEFAULT FALSE
-#define INITIAL_THRESHOLD_DEFAULT 20
-
 /* initialize the tapencoder's class */
 static void
 gst_tapenc_class_init (GstTapEncClass * klass)
@@ -320,17 +314,17 @@ gst_tapenc_class_init (GstTapEncClass * klass)
       g_param_spec_uint ("min_duration", "Minimum duration", "Minimum duration of a pulse, in samples", 0, UINT_MAX,
           0, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_SENSITIVITY,
-      g_param_spec_uchar ("sensitivity", "Sensitivity", "How much the detector should be sensitive to a wave much smaller than the previous one. 100 = detect all waves. 0 = all waves less than 1/2 high than the previous one are ignored", 0, 100,
-          MIN_DURATION_DEFAULT, G_PARAM_READWRITE));
+      g_param_spec_uint ("sensitivity", "Sensitivity", "How much the detector should be sensitive to a wave much smaller than the previous one. 100 = detect all waves. 0 = all waves less than 1/2 high than the previous one are ignored", 0, 100,
+          12, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_TRIGGER_ON_RISING_EDGE,
       g_param_spec_boolean ("rising_edge", "Trigger on rising edge", "If true, a rising edge is a boundary between pulses. Otherwise, a falling edge. The latter is recommended in case the audio system inverts the waveforms. If semiwaves are used, this is ignored",
-          TRIGGER_ON_RISING_EDGE_DEFAULT, G_PARAM_READWRITE));
+          TRUE, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_SEMIWAVES,
       g_param_spec_boolean ("semiwaves", "Use semiwaves", "If true, both rising edges and falling edges are boundaries between pulses. Some C16/+4 tapes need it",
-          SEMIWAVES_DEFAULT, G_PARAM_READWRITE));
+          FALSE, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_INITIAL_THRESHOLD,
-      g_param_spec_uchar ("initial_threshold", "Initial threshold", "Level the signal needs to reach to overcome initial noise", 0, 127,
-          INITIAL_THRESHOLD_DEFAULT, G_PARAM_READWRITE));
+      g_param_spec_uint ("initial_threshold", "Initial threshold", "Level the signal needs to reach to overcome initial noise", 0, 127,
+          20, G_PARAM_READWRITE));
 }
 
 /* GstElement vmethod implementations */
@@ -401,6 +395,9 @@ static void
 gst_tapenc_init (GstTapEnc * filter,
     GstTapEncClass * gclass)
 {
+  guint i, nproperties;
+  GParamSpec ** properties = g_object_class_list_properties (G_OBJECT_GET_CLASS(filter), &nproperties);
+
   filter->sinkpad = gst_pad_new_from_static_template (&sink_factory, "sink");
   gst_pad_set_setcaps_function (filter->sinkpad,
                                 GST_DEBUG_FUNCPTR(gst_tapenc_sinkpad_set_caps));
@@ -414,11 +411,14 @@ gst_tapenc_init (GstTapEnc * filter,
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
 
-  filter->min_duration = MIN_DURATION_DEFAULT;
-  filter->sensitivity = SENSITIVITY_DEFAULT;
-  filter->trigger_on_rising_edge = TRIGGER_ON_RISING_EDGE_DEFAULT;
-  filter->semiwaves = SEMIWAVES_DEFAULT;
-  filter->initial_threshold = INITIAL_THRESHOLD_DEFAULT;
+  /* set defaults for properties */
+  for (i = 0;i < nproperties; i++) {
+    GValue default_value = {0,};
+    g_value_init (&default_value, G_PARAM_SPEC_VALUE_TYPE(properties[i]));
+    g_param_value_set_default (properties[i], &default_value);
+    g_object_set_property (G_OBJECT(filter), g_param_spec_get_name (properties[i]), &default_value);
+  }
+  g_free(properties);
 
   filter->outbuf = NULL;
 }

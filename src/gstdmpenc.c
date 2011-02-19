@@ -383,7 +383,6 @@ gst_dmpenc_init (GstDmpEnc * filter,
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
 
-
   /* set defaults for properties */
   for (i = 0;i < nproperties; i++) {
     GValue default_value = {0,};
@@ -391,6 +390,7 @@ gst_dmpenc_init (GstDmpEnc * filter,
     g_param_value_set_default (properties[i], &default_value);
     g_object_set_property (G_OBJECT(filter), g_param_spec_get_name (properties[i]), &default_value);
   }
+  g_free(properties);
 
   filter->sent_header = FALSE;
 }
