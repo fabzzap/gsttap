@@ -46,12 +46,12 @@
 /**
  * SECTION:element-dmpenc
  *
- * FIXME:Describe dmpenc here.
+ * Dumps a Commodore TAP stream into the DC2N DMP format.
  *
  * <refsect2>
  * <title>Example launch line</title>
  * |[
- * gst-launch -v -m fakesrc ! dmpenc ! fakesink silent=TRUE
+ * gst-launch -v -m fakesrc ! tapenc ! dmpenc ! fakesink silent=TRUE
  * ]|
  * </refsect2>
  */

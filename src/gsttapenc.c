@@ -44,14 +44,14 @@
  */
 
 /**
- * SECTION:element-tapencoder
+ * SECTION:element-tapenc
  *
- * FIXME:Describe tapencoder here.
+ * Convert an audio stream to the Commodore TAP format.
  *
  * <refsect2>
  * <title>Example launch line</title>
  * |[
- * gst-launch -v -m fakesrc ! tapencoder ! fakesink silent=TRUE
+ * gst-launch -v -m fakesrc ! tapenc ! tapefileenc ! fakesink silent=TRUE
  * ]|
  * </refsect2>
  */

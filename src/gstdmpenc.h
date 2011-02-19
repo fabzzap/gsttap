@@ -2,7 +2,7 @@
  * GStreamer
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
- * Copyright (C) 2011 Fabrizio Gennari <<user@hostname.org>>
+ * Copyright (C) 2011 Fabrizio Gennari <fabrizio.ge@tiscali.it>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -56,3 +56,4 @@ gst_dmpenc_register (GstPlugin * plugin);
 G_END_DECLS
 
 #endif /* __GST_DMPENC_H__ */
+

@@ -2,7 +2,7 @@
  * GStreamer
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
- * Copyright (C) 2011 Fabrizio Gennari <<user@hostname.org>>
+ * Copyright (C) 2011 Fabrizio Gennari <fabrizio.ge@tiscali.it>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -55,49 +55,7 @@ G_BEGIN_DECLS
 gboolean
 gst_tapenc_register (GstPlugin * plugin);
 
-/* #defines don't like whitespacey bits 
-#define GST_TYPE_TAPENC \
-  (gst_tapenc_get_type())
-#define GST_TAPENC(obj) \
-  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_TAPENC,GstTapEnc))
-#define GST_TAPENC_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_TAPENC,GstTapEncClass))
-#define GST_IS_TAPENC(obj) \
-  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_TAPENC))
-#define GST_IS_TAPENC_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_TAPENC))
-
-typedef struct _GstTapEnc      GstTapEnc;
-typedef struct _GstTapEncClass GstTapEncClass;
-
-struct _GstTapEnc
-{
-  GstElement element;
-
-  GstPad *sinkpad, *srcpad;
-
-  gboolean trigger_on_rising_edge;
-
-  gboolean semiwaves;
-
-  guchar sensitivity;
-
-  guint min_duration;
-
-  guchar initial_threshold;
-
-  GstBuffer *outbuf;
-
-  struct tap_enc_t *tap;
-};
-
-struct _GstTapEncClass 
-{
-  GstElementClass parent_class;
-};
-
-GType gst_tapenc_get_type (void);*/
-
 G_END_DECLS
 
 #endif /* __GST_TAPENC_H__ */
+
