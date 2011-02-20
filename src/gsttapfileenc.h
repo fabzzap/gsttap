@@ -43,15 +43,15 @@
  * Boston, MA 02111-1307, USA.
  */
 
-#ifndef __GST_TAPENC_H__
-#define __GST_TAPENC_H__
+#ifndef __GST_TAPFILEENC_H__
+#define __GST_TAPFILEENC_H__
 
 #include <gst/gst.h>
 
 G_BEGIN_DECLS
 
 gboolean
-gst_tapenc_register (GstPlugin * plugin);
+gst_tapfileenc_register (GstPlugin * plugin);
 
 G_END_DECLS
 

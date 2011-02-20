@@ -63,6 +63,7 @@
 #include <gst/gst.h>
 
 #include "gsttapenc.h"
+#include "tapencoder.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_tapenc_debug);
 #define GST_CAT_DEFAULT gst_tapenc_debug
