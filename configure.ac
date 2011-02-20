@@ -59,6 +59,33 @@ PKG_CHECK_MODULES(GST, [
   ])
 ])
 
+AC_ARG_WITH(libtap-includes, [Where the header files for libtap are located])
+AC_ARG_WITH(libtap-libs, [Where the libtap library is located])
+
+if test -n "$with_libtap_includes"; then
+  CPPFLAGS="-I$with_libtap_includes $CPPFLAGS"
+fi
+if test -n "$with_libtap_libs"; then
+  LDFLAGS="-L$with_libtap_libs $LDFLAGS"
+fi
+
+AC_CHECK_HEADER(tapencoder.h,
+  [
+    AC_CHECK_LIB(tapencoder,tap_get_pulse,,
+      [
+        AC_MSG_ERROR([
+	             You need to install or upgrade the tapencoder library.
+		    ])
+      ]
+    )
+  ],
+  [
+    AC_MSG_ERROR([
+                 You need to install or upgrade the tapencoder.h header file.
+		])
+  ]
+)
+
 dnl check if compiler understands -Wall (if yes, add -Wall to GST_CFLAGS)
 AC_MSG_CHECKING([to see if compiler understands -Wall])
 save_CFLAGS="$CFLAGS"
