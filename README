@@ -16,7 +16,7 @@ The caps of raw TAP format are as follows:
 audio/x-tap - format
 rate (G_TYPE_INT) - number of time units per second
 semiwaves (G_TYPE_BOOLEAN) - if true, a sample is a semiwave, otherwise a full wave
-Each sample is a 32-bit number, which is written to the byte stream is 4 bytes
+Each sample is a 32-bit number, which is written to the byte stream as 4 bytes
 in little-endian format. The number represents the number of time units the
 wave (or semiwave) lasts.
 
