@@ -93,6 +93,8 @@ struct _GstTapFileEnc
   guchar machine_byte;
   guchar video_byte;
   guchar version;
+
+  guint length;
 };
 
 struct _GstTapFileEncClass
@@ -284,6 +286,7 @@ static GstFlowReturn
 push_if_needed (GstPad * pad, GstBuffer ** buf, guint numbytes)
 {
   GstFlowReturn ret = GST_FLOW_OK;
+  GstTapFileEnc *filter = GST_TAPFILEENC (GST_OBJECT_PARENT (pad));
 
   if (*buf == NULL || GST_BUFFER_SIZE(*buf) + numbytes > TAP_OUTPUT_SIZE) {
     GstBuffer * newbuf = gst_buffer_new_and_alloc (TAP_OUTPUT_SIZE);
@@ -291,8 +294,10 @@ push_if_needed (GstPad * pad, GstBuffer ** buf, guint numbytes)
 
     GST_BUFFER_SIZE(newbuf) = 0;
     gst_buffer_set_caps (newbuf, caps);
-    if (*buf != NULL)
+    if (*buf != NULL) {
       ret = gst_pad_push (pad, *buf);
+      filter->length += GST_BUFFER_SIZE(*buf);
+    }
     *buf = newbuf;
   }
   return ret;
@@ -351,6 +356,7 @@ write_header(GstPad * pad
   *header++ = version;
   *header++ = machine_byte;
   *header++ = video_byte;
+  *header++ = 0;
   GST_WRITE_UINT32_LE (header, len);
   return gst_pad_push (pad, buf);
 }
@@ -406,37 +412,36 @@ gst_tapfileenc_chain (GstPad * pad, GstBuffer * buf)
         ret = ret2;
   }
   ret2 = gst_pad_push (filter->srcpad, newbuf);
+  filter->length += GST_BUFFER_SIZE(newbuf);
   if (ret2 != GST_FLOW_OK)
     ret = ret2;
 
   return ret;
 }
 
-/*static gboolean
+static gboolean
 gst_tapfileenc_sink_event (GstPad * pad, GstEvent * event)
 {
-  GstTapEnc *filter = GST_TAPENC (gst_pad_get_parent (pad));
+  GstTapFileEnc *filter = GST_TAPFILEENC (gst_pad_get_parent (pad));
 
   switch (GST_EVENT_TYPE (event)) {
   case GST_EVENT_EOS:
-    if (filter->tap != NULL) {
-      uint32_t first_flushed;
-      uint32_t second_flushed = tap_flush(filter->tap, &first_flushed);
-      if (first_flushed > 0)
-        add_pulse_to_outbuf(filter, first_flushed);
-      add_pulse_to_outbuf(filter, second_flushed);
-      gst_pad_push (filter->srcpad, filter->outbuf);
-    }
-    break;
-  case GST_EVENT_FLUSH_STOP:
-    tap_flush(filter->tap, NULL);
+  /* seek to beginning of file */
+    gst_pad_push_event (filter->srcpad,
+      gst_event_new_new_segment (FALSE, 1.0, GST_FORMAT_BYTES, 0, -1, 0));
+    write_header(filter->srcpad
+                      ,filter->version
+                      ,filter->machine_byte
+                      ,filter->video_byte
+                      ,filter->length
+                       );
     break;
   default:
     break;
   }
 
   return gst_pad_event_default (pad, event);
-}*/
+}
 
 
 /* initialize the new element
@@ -459,6 +464,8 @@ gst_tapfileenc_init (GstTapFileEnc * filter,
                               GST_DEBUG_FUNCPTR(gst_tapfileenc_chain));
   gst_pad_set_getcaps_function (filter->sinkpad,
                                 GST_DEBUG_FUNCPTR(gst_tapfileenc_sinkpad_get_caps));
+  gst_pad_set_event_function (filter->sinkpad,
+      GST_DEBUG_FUNCPTR (gst_tapfileenc_sink_event));
 
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
 
@@ -475,6 +482,7 @@ gst_tapfileenc_init (GstTapFileEnc * filter,
   g_free(properties);
 
   filter->sent_header = FALSE;
+  filter->length = 0;
 }
 
 gboolean
