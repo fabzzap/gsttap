@@ -3,7 +3,11 @@
 plugin_LTLIBRARIES = libgsttap.la
 
 # sources used to compile this plug-in
-libgsttap_la_SOURCES = gsttapenc.c gsttapenc.h gstdmpenc.c gstdmpenc.h plugin.c gsttapfileenc.c gsttapfileenc.h
+libgsttap_la_SOURCES = gsttapenc.c gsttapenc.h \
+gstdmpenc.c gstdmpenc.h \
+gsttapfileenc.c gsttapfileenc.h \
+gsttapconvert.c gsttapconvert.h \
+plugin.c
 
 # compiler and linker flags used to compile this plugin, set in configure.ac
 libgsttap_la_CFLAGS = $(GST_CFLAGS)

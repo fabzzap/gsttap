@@ -108,8 +108,6 @@ struct _GstTapEncClass
   GstElementClass parent_class;
 };
 
-/* GType gst_tapenc_get_type (void);*/
-
 /* Filter signals and args */
 enum
 {
@@ -169,7 +167,6 @@ add_pulse_to_outbuf (GstTapEnc *filter, uint32_t pulse)
     filter->outbuf = gst_buffer_new_and_alloc (TAPENC_OUTBUF_SIZE);
     GST_BUFFER_SIZE(filter->outbuf) = 0;
     gst_buffer_set_caps(filter->outbuf, caps);
-    gst_caps_unref (caps);
   }
   *((uint32_t*)(GST_BUFFER_DATA(filter->outbuf) + GST_BUFFER_SIZE(filter->outbuf))) = pulse;
   GST_BUFFER_SIZE(filter->outbuf) += sizeof(uint32_t);
@@ -334,13 +331,10 @@ gst_tapenc_class_init (GstTapEncClass * klass)
 static gboolean
 gst_tapenc_sinkpad_set_caps (GstPad * pad, GstCaps * caps)
 {
-  GstTapEnc *filter;
-  GstStructure *structure;
+  GstTapEnc *filter = GST_TAPENC (gst_pad_get_parent (pad));
+  GstStructure *structure = gst_caps_get_structure (caps, 0);
   GstCaps *othercaps;
   gint samplerate;
-
-  structure = gst_caps_get_structure (caps, 0);
-  filter = GST_TAPENC (gst_pad_get_parent (pad));
 
   if (!gst_structure_get_int (structure, "rate", &samplerate))
   {
@@ -350,7 +344,9 @@ gst_tapenc_sinkpad_set_caps (GstPad * pad, GstCaps * caps)
 
   othercaps =
       gst_caps_new_simple ("audio/x-tap",
-      "rate", G_TYPE_INT, samplerate, NULL);
+      "rate", G_TYPE_INT, samplerate, 
+      "semiwaves", G_TYPE_BOOLEAN, filter->semiwaves, 
+      NULL);
 
   filter->tap = tap_fromaudio_init_with_machine(filter->min_duration,
                                                 filter->sensitivity,

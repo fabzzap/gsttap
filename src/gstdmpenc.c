@@ -236,14 +236,11 @@ gst_dmpenc_sinkpad_set_caps (GstPad * pad, GstCaps * caps)
   GstStructure *structure = gst_caps_get_structure (caps, 0);
   gint samplerate;
   gboolean ret = gst_structure_get_int (structure, "rate", &samplerate);
-  int i;
 
   if (!ret)
     GST_ERROR_OBJECT (filter, "input caps have no sample rate field");
   else
     filter->rate = samplerate;
-
-  gst_object_unref (filter);
 
   return ret;
 }

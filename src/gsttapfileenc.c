@@ -3,7 +3,7 @@
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2011 Fabrizio Gennari <fabrizio.ge@tiscali.it>
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -95,12 +95,10 @@ struct _GstTapFileEnc
   guchar version;
 };
 
-struct _GstTapFileEncClass 
+struct _GstTapFileEncClass
 {
   GstElementClass parent_class;
 };
-
-/*GType gst_tapfileenc_get_type (void);*/
 
 GST_DEBUG_CATEGORY_STATIC (gst_tapfileenc_debug);
 #define GST_CAT_DEFAULT gst_tapfileenc_debug
@@ -134,7 +132,7 @@ static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("audio/x-tap, "
-    "rate = (int) [886724,894886,985248,1022727,1108405]")
+    "rate = (int) { 886724 , 894886 , 985248 , 1022727 , 1108405 }")
     );
 
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
@@ -258,18 +256,28 @@ gst_tapfileenc_sinkpad_set_caps (GstPad * pad, GstCaps * caps)
       GST_ERROR_OBJECT (filter, "input caps have no semiwaves field");
     else if (semiwaves)
       filter->version = 2;
-    else 
+    else
       filter->version = filter->force_version_0 ? 0 : 1;
   }
- 
-  gst_object_unref (filter);
 
   return ret;
 }
 
-/* chain function
- * this function does the actual processing
- */
+static GstCaps *
+gst_tapfileenc_sinkpad_get_caps (GstPad * pad)
+{
+  GstTapFileEnc *filter = GST_TAPFILEENC (gst_pad_get_parent (pad));
+  GstCaps * ret = gst_caps_copy (gst_pad_get_pad_template_caps (pad));
+  GstStructure *structure = gst_caps_get_structure (ret, 0);
+  GValue value = {0};
+
+  g_value_init (&value, G_TYPE_INT);
+  g_value_set_int (&value, tap_clocks[filter->machine_byte][filter->video_byte]);
+  gst_structure_set_value (structure, "rate", &value);
+
+  return ret;
+}
+
 #define TAP_OUTPUT_SIZE 128
 
 static GstFlowReturn
@@ -283,7 +291,6 @@ push_if_needed (GstPad * pad, GstBuffer ** buf, guint numbytes)
 
     GST_BUFFER_SIZE(newbuf) = 0;
     gst_buffer_set_caps (newbuf, caps);
-    gst_caps_unref (caps);
     if (*buf != NULL)
       ret = gst_pad_push (pad, *buf);
     *buf = newbuf;
@@ -322,7 +329,7 @@ add_byte_to_outbuf (GstPad * pad, GstBuffer ** buf, guchar pulse)
 static GstFlowReturn
 add_pulse_to_outbuf (GstPad * pad, GstBuffer ** buf, guint pulse)
 {
-  if (pulse >= OVERFLOW_LO || pulse == 0)
+  if (pulse >= OVERFLOW_LO)
     return add_four_bytes_to_outbuf (pad, buf, pulse);
   return add_byte_to_outbuf (pad, buf, (guchar)(pulse / 8));
 }
@@ -348,6 +355,10 @@ write_header(GstPad * pad
   return gst_pad_push (pad, buf);
 }
 
+/* chain function
+ * this function does the actual processing
+ */
+
 static GstFlowReturn
 gst_tapfileenc_chain (GstPad * pad, GstBuffer * buf)
 {
@@ -355,9 +366,11 @@ gst_tapfileenc_chain (GstPad * pad, GstBuffer * buf)
   guint *data = (guint*) GST_BUFFER_DATA(buf);
   guint buflen = GST_BUFFER_SIZE(buf) / sizeof(int32_t);
   guint bufsofar;
-  GstFlowReturn ret = GST_FLOW_OK, ret2;
-  guint overflow = filter->version == 0 ? OVERFLOW_HI : OVERFLOW_LO;
-  GstBuffer * newbuf = NULL;
+  GstFlowReturn ret = GST_FLOW_OK, ret2 = GST_FLOW_OK;
+  guint overflow = filter->version != 0 ? OVERFLOW_HI : OVERFLOW_LO;
+  guint overflow_to_write = filter->version != 0 ? OVERFLOW_HI : 0;
+  GstBuffer * newbuf = gst_buffer_new_and_alloc (GST_BUFFER_SIZE(buf));
+  gst_buffer_set_caps (newbuf, gst_pad_get_caps(filter->srcpad));
 
   if (!filter->sent_header) {
     ret = write_header(filter->srcpad
@@ -378,18 +391,19 @@ gst_tapfileenc_chain (GstPad * pad, GstBuffer * buf)
   for (bufsofar = 0; bufsofar < buflen; bufsofar++) {
     guint pulse = data[bufsofar];
     while (pulse >= overflow) {
-      ret2 = filter->version == 0 ?
-        add_byte_to_outbuf(filter->srcpad, &newbuf, 0)
-        : add_pulse_to_outbuf(filter->srcpad, &newbuf, overflow);
+      ret2 = add_pulse_to_outbuf(filter->srcpad, &newbuf, overflow_to_write);
       if (ret2 != GST_FLOW_OK)
         ret = ret2;
       pulse -= overflow;
     }
-    if (filter->version != 0 || pulse != 0) {
-      ret2 = add_pulse_to_outbuf(filter->srcpad, &newbuf, pulse);
-      if (ret2 != GST_FLOW_OK)
-        ret = ret2;
+    if (pulse == 0) {
+      if (filter->version != 0)
+        ret2 = add_four_bytes_to_outbuf (filter->srcpad, &newbuf, 0);
     }
+    else
+      ret2 = add_pulse_to_outbuf(filter->srcpad, &newbuf, pulse);
+    if (ret2 != GST_FLOW_OK)
+        ret = ret2;
   }
   ret2 = gst_pad_push (filter->srcpad, newbuf);
   if (ret2 != GST_FLOW_OK)
@@ -397,6 +411,32 @@ gst_tapfileenc_chain (GstPad * pad, GstBuffer * buf)
 
   return ret;
 }
+
+/*static gboolean
+gst_tapfileenc_sink_event (GstPad * pad, GstEvent * event)
+{
+  GstTapEnc *filter = GST_TAPENC (gst_pad_get_parent (pad));
+
+  switch (GST_EVENT_TYPE (event)) {
+  case GST_EVENT_EOS:
+    if (filter->tap != NULL) {
+      uint32_t first_flushed;
+      uint32_t second_flushed = tap_flush(filter->tap, &first_flushed);
+      if (first_flushed > 0)
+        add_pulse_to_outbuf(filter, first_flushed);
+      add_pulse_to_outbuf(filter, second_flushed);
+      gst_pad_push (filter->srcpad, filter->outbuf);
+    }
+    break;
+  case GST_EVENT_FLUSH_STOP:
+    tap_flush(filter->tap, NULL);
+    break;
+  default:
+    break;
+  }
+
+  return gst_pad_event_default (pad, event);
+}*/
 
 
 /* initialize the new element
@@ -417,6 +457,8 @@ gst_tapfileenc_init (GstTapFileEnc * filter,
                                 GST_DEBUG_FUNCPTR(gst_tapfileenc_sinkpad_set_caps));
   gst_pad_set_chain_function (filter->sinkpad,
                               GST_DEBUG_FUNCPTR(gst_tapfileenc_chain));
+  gst_pad_set_getcaps_function (filter->sinkpad,
+                                GST_DEBUG_FUNCPTR(gst_tapfileenc_sinkpad_get_caps));
 
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
 
