@@ -233,10 +233,10 @@ gst_tapenc_get_property (GObject * object, guint prop_id,
       g_value_set_uint (value, filter->min_duration);
       break;
     case PROP_SENSITIVITY:
-      g_value_set_uchar (value, filter->sensitivity);
+      g_value_set_uint (value, filter->sensitivity);
       break;
     case PROP_INITIAL_THRESHOLD:
-      g_value_set_uchar (value, filter->initial_threshold);
+      g_value_set_uint (value, filter->initial_threshold);
       break;
     case PROP_TRIGGER_ON_RISING_EDGE:
       g_value_set_boolean (value, filter->trigger_on_rising_edge);
