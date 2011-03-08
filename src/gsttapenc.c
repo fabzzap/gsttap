@@ -359,6 +359,33 @@ gst_tapenc_sinkpad_set_caps (GstPad * pad, GstCaps * caps)
   return TRUE;
 }
 
+static GstCaps *
+gst_tapenc_sinkpad_get_caps (GstPad * pad)
+{
+  GstTapEnc *filter = GST_TAPENC (gst_pad_get_parent (pad));
+  GstCaps * ret = gst_caps_copy (gst_pad_get_pad_template_caps (pad));
+  GstStructure *structure = gst_caps_get_structure (ret, 0);
+  GstPad * peer = gst_pad_get_peer (filter->srcpad);
+
+  GST_DEBUG_OBJECT (filter, "initial: %" GST_PTR_FORMAT, structure);
+  if (peer) {
+    GstCaps *othercaps = gst_pad_get_caps (peer);
+
+    if (othercaps) {
+      GstStructure *otherstructure = gst_caps_get_structure (othercaps, 0);
+      const GValue * rate = gst_structure_get_value (otherstructure, "rate");
+
+      GST_DEBUG_OBJECT (filter, "peer: %" GST_PTR_FORMAT, otherstructure);
+      if (G_VALUE_HOLDS(rate, G_TYPE_INT)) {
+        gst_structure_set_value (structure, "rate", rate);
+      }
+    }
+  }
+  GST_DEBUG_OBJECT (filter, "returning: %" GST_PTR_FORMAT, structure);
+
+  return ret;
+}
+
 /* chain function
  * this function does the actual processing
  */
@@ -402,6 +429,8 @@ gst_tapenc_init (GstTapEnc * filter,
                               GST_DEBUG_FUNCPTR(gst_tapenc_chain));
   gst_pad_set_event_function (filter->sinkpad,
                               GST_DEBUG_FUNCPTR(gst_tapenc_sink_event));
+  gst_pad_set_getcaps_function (filter->sinkpad,
+                                GST_DEBUG_FUNCPTR(gst_tapenc_sinkpad_get_caps));
 
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
 
