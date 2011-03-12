@@ -86,6 +86,23 @@ AC_CHECK_HEADER(tapencoder.h,
   ]
 )
 
+AC_CHECK_HEADER(tapdecoder.h,
+  [
+    AC_CHECK_LIB(tapdecoder,tap_set_pulse,,
+      [
+        AC_MSG_ERROR([
+	             You need to install or upgrade the tapdecoder library.
+		    ])
+      ]
+    )
+  ],
+  [
+    AC_MSG_ERROR([
+                 You need to install or upgrade the tapdecoder.h header file.
+		])
+  ]
+)
+
 dnl check if compiler understands -Wall (if yes, add -Wall to GST_CFLAGS)
 AC_MSG_CHECKING([to see if compiler understands -Wall])
 save_CFLAGS="$CFLAGS"
