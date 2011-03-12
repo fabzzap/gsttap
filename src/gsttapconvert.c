@@ -209,7 +209,7 @@ static GstCaps* gst_tapconvert_transform_caps (GstBaseTransform *trans,
   if (peer) {
     GstCaps *othercaps = gst_pad_get_caps (peer);
 
-    if (othercaps) {
+    if (othercaps && gst_caps_get_size (othercaps) > 0) {
       GstStructure *structure = gst_caps_get_structure (othercaps, 0);
       const GValue * rate = gst_structure_get_value (structure, "rate");
 
