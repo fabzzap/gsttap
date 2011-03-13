@@ -3,7 +3,7 @@
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2011 Fabrizio Gennari <fabrizio.ge@tiscali.it>
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -95,12 +95,10 @@ struct _GstDmpDec
   GstAdapter * adapter;
 };
 
-struct _GstDmpDecClass 
+struct _GstDmpDecClass
 {
   GstElementClass parent_class;
 };
-
-/*GType gst_dmpdec_get_type (void);*/
 
 GST_DEBUG_CATEGORY_STATIC (gst_dmpdec_debug);
 #define GST_CAT_DEFAULT gst_dmpdec_debug
