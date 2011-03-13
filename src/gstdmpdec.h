@@ -1,7 +1,9 @@
 /*
  * GStreamer
+ * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
+ * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2011 Fabrizio Gennari <fabrizio.ge@tiscali.it>
- *
+ * 
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -41,49 +43,17 @@
  * Boston, MA 02111-1307, USA.
  */
 
-/* entry point to initialize the plug-in
- * initialize the plug-in itself
- * register the element factories and other features
- */
-
-#ifdef HAVE_CONFIG_H
-#  include <config.h>
-#endif
+#ifndef __GST_DMPDEC_H__
+#define __GST_DMPDEC_H__
 
 #include <gst/gst.h>
 
-#include "gsttapenc.h"
-#include "gstdmpenc.h"
-#include "gsttapfileenc.h"
-#include "gsttapdec.h"
-#include "gstdmpdec.h"
+G_BEGIN_DECLS
 
-static gboolean
-plugin_init (GstPlugin * plugin)
-{
-  return
-    gst_tapenc_register (plugin)
- && gst_tapdec_register (plugin)
- && gst_dmpenc_register (plugin)
- && gst_dmpdec_register (plugin)
- && gst_tapfileenc_register (plugin)
- && gst_tapconvert_register (plugin)
-;
-}
+gboolean
+gst_dmpdec_register (GstPlugin * plugin);
 
-/* gstreamer looks for this structure to register tapencoders
- *
- * 
- */
-GST_PLUGIN_DEFINE (
-    GST_VERSION_MAJOR,
-    GST_VERSION_MINOR,
-    "tap",
-    "Commodore 64 tape support",
-    plugin_init,
-    VERSION,
-    "LGPL",
-    PACKAGE,
-    "http://wav-prg.sourceforge.net/"
-);
+G_END_DECLS
+
+#endif /* __GST_DMPDEC_H__ */
 
