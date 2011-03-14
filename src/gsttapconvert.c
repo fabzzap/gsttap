@@ -40,6 +40,8 @@
 #include <gst/base/gstbasetransform.h>
 #include <gst/controller/gstcontroller.h>
 
+#include "gsttapconvert.h"
+
 GST_DEBUG_CATEGORY_STATIC (gst_tapconvert_debug);
 #define GST_CAT_DEFAULT gst_tapconvert_debug
 

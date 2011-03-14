@@ -53,10 +53,12 @@
 #include <gst/gst.h>
 
 #include "gsttapenc.h"
-#include "gstdmpenc.h"
-#include "gsttapfileenc.h"
 #include "gsttapdec.h"
 #include "gstdmpdec.h"
+#include "gstdmpenc.h"
+#include "gsttapfileenc.h"
+#include "gsttapfiledec.h"
+#include "gsttapconvert.h"
 
 static gboolean
 plugin_init (GstPlugin * plugin)
