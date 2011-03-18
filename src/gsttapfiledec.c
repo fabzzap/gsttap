@@ -186,6 +186,19 @@ add_pulse_to_outbuf (GstPad * pad, GstBuffer ** buf, guint pulse)
   return ret;
 }
 
+static GstCaps *
+gst_tapfiledec_srcpad_get_caps (GstPad * pad)
+{
+  GstTapFileDec *filter = GST_TAPFILEDEC (gst_pad_get_parent (pad));
+  GstCaps * result = filter->read_header ?
+    GST_PAD_CAPS (pad) :
+    GST_PAD_TEMPLATE_CAPS (GST_PAD_PAD_TEMPLATE (pad));
+
+  GST_DEBUG_OBJECT (filter, "Requested caps from source pad %" GST_PTR_FORMAT, result);
+  return gst_caps_copy (result);
+}
+
+
 #define TAPFILEDEC_HEADER_SIZE 20
 #define ONE_BYTE_OVERFLOW 0x100
 #define THREE_BYTE_OVERFLOW 0xFFFFFF
@@ -245,14 +258,15 @@ gst_tapfiledec_chain (GstPad * pad, GstBuffer * buf)
     g_value_set_int (&rate, tap_clocks[machine][video_standard]);
     g_value_init (&semiwaves, G_TYPE_BOOLEAN);
     g_value_set_boolean (&semiwaves, filter->version == 2);
+    srccaps = gst_pad_get_caps (filter->srcpad);
 
-    srccaps = gst_caps_copy (gst_pad_template_get_caps (gst_pad_get_pad_template (filter->srcpad)));
+    filter->read_header = TRUE;
+
     srcstructure = gst_caps_get_structure (srccaps, 0);
     gst_structure_set_value (srcstructure, "rate", &rate);
     gst_structure_set_value (srcstructure, "semiwaves", &semiwaves);
     gst_pad_set_caps (filter->srcpad, srccaps);
     gst_caps_unref (srccaps);
-    filter->read_header = TRUE;
   }
 
   /* Don't go past this point before finishing with the header */
@@ -318,6 +332,8 @@ gst_tapfiledec_init (GstTapFileDec * filter,
                               GST_DEBUG_FUNCPTR(gst_tapfiledec_chain));
 
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
+  gst_pad_set_getcaps_function (filter->srcpad,
+                                GST_DEBUG_FUNCPTR(gst_tapfiledec_srcpad_get_caps));
 
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
@@ -332,6 +348,6 @@ gst_tapfiledec_register (GstPlugin * plugin)
   GST_DEBUG_CATEGORY_INIT (gst_tapfiledec_debug, "tapfiledec",
       0, "Commodore 64 DMP encoder");
 
-  return gst_element_register (plugin, "tapfiledec", GST_RANK_NONE, GST_TYPE_TAPFILEDEC);
+  return gst_element_register (plugin, "tapfiledec", GST_RANK_MARGINAL, GST_TYPE_TAPFILEDEC);
 }
 

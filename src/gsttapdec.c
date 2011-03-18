@@ -355,6 +355,6 @@ gst_tapdec_register (GstPlugin * plugin)
 {
   GST_DEBUG_CATEGORY_INIT (gst_tapdec_debug, "tapdec",
       0, "Commodore 64 TAP format decoder");
-  return gst_element_register (plugin, "tapdec", GST_RANK_NONE, GST_TYPE_TAPDEC);
+  return gst_element_register (plugin, "tapdec", GST_RANK_SECONDARY, GST_TYPE_TAPDEC);
 }
 

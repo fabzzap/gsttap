@@ -305,6 +305,6 @@ gst_dmpdec_register (GstPlugin * plugin)
   GST_DEBUG_CATEGORY_INIT (gst_dmpdec_debug, "dmpdec",
       0, "Commodore 64 DMP encoder");
 
-  return gst_element_register (plugin, "dmpdec", GST_RANK_NONE, GST_TYPE_DMPDEC);
+  return gst_element_register (plugin, "dmpdec", GST_RANK_MARGINAL, GST_TYPE_DMPDEC);
 }
 
