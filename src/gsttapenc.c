@@ -371,7 +371,7 @@ gst_tapenc_sinkpad_get_caps (GstPad * pad)
   if (peer) {
     GstCaps *othercaps = gst_pad_get_caps (peer);
 
-    if (othercaps) {
+    if (othercaps && gst_caps_get_size (othercaps) > 0) {
       GstStructure *otherstructure = gst_caps_get_structure (othercaps, 0);
       const GValue * rate = gst_structure_get_value (otherstructure, "rate");
 
