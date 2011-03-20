@@ -214,8 +214,8 @@ gst_tapfiledec_chain (GstPad * pad, GstBuffer * buf)
 
   gst_adapter_push (filter->adapter, buf);
   if (!filter->read_header && gst_adapter_available (filter->adapter) >= TAPFILEDEC_HEADER_SIZE) {
-    const char expected_signature1[] = "C64-FILE-RAW";
-    const char expected_signature2[] = "C16-FILE-RAW";
+    const char expected_signature1[] = "C64-TAPE-RAW";
+    const char expected_signature2[] = "C16-TAPE-RAW";
     GstBuffer *header_buf = gst_adapter_take_buffer (filter->adapter, TAPFILEDEC_HEADER_SIZE);
     guint8 *header_data;
     gboolean header_valid;

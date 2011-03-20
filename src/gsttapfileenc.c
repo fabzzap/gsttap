@@ -349,7 +349,7 @@ write_header(GstPad * pad
 {
   GstBuffer *buf = gst_buffer_new_and_alloc (20);
   guint8 *header = GST_BUFFER_DATA (buf);
-  const char signature[] = "C64-FILE-RAW";
+  const char signature[] = "C64-TAPE-RAW";
 
   memcpy (header, signature, strlen(signature));
   header += strlen(signature);
