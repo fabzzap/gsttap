@@ -46,7 +46,7 @@
 /**
  * SECTION:element-tapfiledec
  *
- * Reads a DC2N DMP file and extract its Commodore TAP stream.
+ * Reads a Commodore TAP file and extract its Commodore TAP stream.
  *
  * <refsect2>
  * <title>Example launch line</title>
