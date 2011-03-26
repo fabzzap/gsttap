@@ -276,16 +276,13 @@ gst_tapenc_sink_event (GstPad * pad, GstEvent * event)
   switch (GST_EVENT_TYPE (event)) {
   case GST_EVENT_EOS:
     if (filter->tap != NULL) {
-      uint32_t first_flushed;
-      uint32_t second_flushed = tap_flush(filter->tap, &first_flushed);
-      if (first_flushed > 0)
-        add_pulse_to_outbuf(filter, first_flushed);
+      uint32_t second_flushed = tap_flush(filter->tap);
       add_pulse_to_outbuf(filter, second_flushed);
       gst_pad_push (filter->srcpad, filter->outbuf);
     }
     break;
   case GST_EVENT_FLUSH_STOP:
-    tap_flush(filter->tap, NULL);
+    tap_flush(filter->tap);
     break;
   default:
     break;

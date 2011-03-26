@@ -375,8 +375,7 @@ gst_tapfileenc_chain (GstPad * pad, GstBuffer * buf)
   GstFlowReturn ret = GST_FLOW_OK, ret2 = GST_FLOW_OK;
   guint overflow = filter->version != 0 ? OVERFLOW_HI : OVERFLOW_LO;
   guint overflow_to_write = filter->version != 0 ? OVERFLOW_HI : 0;
-  GstBuffer * newbuf = gst_buffer_new_and_alloc (GST_BUFFER_SIZE(buf));
-  gst_buffer_set_caps (newbuf, gst_pad_get_caps(filter->srcpad));
+  GstBuffer * newbuf = NULL;
 
   if (!filter->sent_header) {
     ret = write_header(filter->srcpad
@@ -393,7 +392,6 @@ gst_tapfileenc_chain (GstPad * pad, GstBuffer * buf)
     filter->sent_header = TRUE;
   }
 
-  GST_BUFFER_SIZE(newbuf) = 0;
   for (bufsofar = 0; bufsofar < buflen; bufsofar++) {
     guint pulse = data[bufsofar];
     while (pulse >= overflow) {
@@ -411,10 +409,12 @@ gst_tapfileenc_chain (GstPad * pad, GstBuffer * buf)
     if (ret2 != GST_FLOW_OK)
         ret = ret2;
   }
-  ret2 = gst_pad_push (filter->srcpad, newbuf);
-  filter->length += GST_BUFFER_SIZE(newbuf);
-  if (ret2 != GST_FLOW_OK)
-    ret = ret2;
+  if (newbuf != NULL) {
+    ret2 = gst_pad_push (filter->srcpad, newbuf);
+    filter->length += GST_BUFFER_SIZE(newbuf);
+    if (ret2 != GST_FLOW_OK)
+      ret = ret2;
+  }
 
   return ret;
 }
