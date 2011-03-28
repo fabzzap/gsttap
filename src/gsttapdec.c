@@ -85,12 +85,11 @@ typedef struct _GstTapDecClass GstTapDecClass;
 struct _GstTapDec
 {
   GstElement element;
-
   GstPad *sinkpad, *srcpad;
 
   gboolean trigger_on_rising_edge;
-
   guint volume;
+  guint waveform;
 
   struct tap_dec_t *tap;
 };
@@ -104,7 +103,8 @@ enum
 {
   PROP_0,
   PROP_VOLUME,
-  PROP_TRIGGER_ON_RISING_EDGE
+  PROP_TRIGGER_ON_RISING_EDGE,
+  PROP_WAVEFORM
 };
 
 /* the capabilities of the inputs and outputs.
@@ -163,6 +163,9 @@ gst_tapdec_set_property (GObject * object, guint prop_id,
     case PROP_TRIGGER_ON_RISING_EDGE:
       filter->trigger_on_rising_edge = g_value_get_boolean (value);
       break;
+    case PROP_WAVEFORM:
+      filter->waveform = g_value_get_uint (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -181,6 +184,9 @@ gst_tapdec_get_property (GObject * object, guint prop_id,
       break;
     case PROP_TRIGGER_ON_RISING_EDGE:
       g_value_set_boolean (value, filter->trigger_on_rising_edge);
+      break;
+    case PROP_WAVEFORM:
+      g_value_set_uint (value, filter->waveform);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -226,6 +232,9 @@ gst_tapdec_class_init (GstTapDecClass * klass)
   g_object_class_install_property (gobject_class, PROP_TRIGGER_ON_RISING_EDGE,
       g_param_spec_boolean ("rising_edge", "Trigger on rising edge", "If true, a rising edge is a boundary between pulses. Otherwise, a falling edge. The latter is recommended in case the audio system inverts the waveforms. If semiwaves are used, this is ignored",
           TRUE, G_PARAM_READWRITE));
+  g_object_class_install_property (gobject_class, PROP_WAVEFORM,
+      g_param_spec_uint ("waveform", "Waveform", "0=square, 1=triangle, 2=sine (if tapencoder does not support sine, will fall back to square)", 0, 2,
+          0, G_PARAM_READWRITE));
 }
 
 /* GstElement vmethod implementations */
@@ -251,11 +260,15 @@ gst_tapdec_sinkpad_set_caps (GstPad * pad, GstCaps * caps)
     return FALSE;
   }
 
-  filter->tap = tap_toaudio_init_with_machine(filter->volume,
-                                              semiwaves ? tap_trigger_both_edges :
-                                              filter->trigger_on_rising_edge ?
-                                              tap_trigger_rising_edge :
-                                              tap_trigger_falling_edge);
+  filter->tap = tapdec_init(filter->volume,
+                            semiwaves ? TAP_TRIGGER_ON_BOTH_EDGES :
+                            filter->trigger_on_rising_edge ?
+                            TAP_TRIGGER_ON_RISING_EDGE :
+                            TAP_TRIGGER_ON_FALLING_EDGE,
+                            filter->waveform==2 ? TAPDEC_SINE :
+                            filter->waveform==1 ? TAPDEC_TRIANGLE :
+                            TAPDEC_SQUARE
+                            );
   othercaps =
       gst_caps_new_simple ("audio/x-raw-int",
       "rate", G_TYPE_INT, samplerate,
@@ -296,10 +309,10 @@ gst_tapdec_chain (GstPad * pad, GstBuffer * buf)
     uint32_t npulses;
     GstBuffer *outbuf;
 
-    tap_set_pulse (filter->tap, data[bufsofar]);
+    tapdec_set_pulse (filter->tap, data[bufsofar]);
     do {
       outbuf = gst_buffer_new_and_alloc(TAPDEC_OUTBUF_SIZE * sizeof(int32_t));
-      npulses = tap_get_buffer(filter->tap, (int32_t*)GST_BUFFER_DATA (outbuf), TAPDEC_OUTBUF_SIZE);
+      npulses = tapdec_get_buffer(filter->tap, (int32_t*)GST_BUFFER_DATA (outbuf), TAPDEC_OUTBUF_SIZE);
       if (npulses > 0) {
         GstFlowReturn ret2;
 

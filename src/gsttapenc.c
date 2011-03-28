@@ -276,13 +276,13 @@ gst_tapenc_sink_event (GstPad * pad, GstEvent * event)
   switch (GST_EVENT_TYPE (event)) {
   case GST_EVENT_EOS:
     if (filter->tap != NULL) {
-      uint32_t second_flushed = tap_flush(filter->tap);
-      add_pulse_to_outbuf(filter, second_flushed);
+      uint32_t flushed_pulses = tapenc_flush(filter->tap);
+      add_pulse_to_outbuf(filter, flushed_pulses);
       gst_pad_push (filter->srcpad, filter->outbuf);
     }
     break;
   case GST_EVENT_FLUSH_STOP:
-    tap_flush(filter->tap);
+    tapenc_flush(filter->tap);
     break;
   default:
     break;
@@ -345,10 +345,13 @@ gst_tapenc_sinkpad_set_caps (GstPad * pad, GstCaps * caps)
       "semiwaves", G_TYPE_BOOLEAN, filter->semiwaves, 
       NULL);
 
-  filter->tap = tap_fromaudio_init_with_machine(filter->min_duration,
-                                                filter->sensitivity,
-                                                filter->initial_threshold,
-                                                !filter->trigger_on_rising_edge);
+  filter->tap = tapenc_init(filter->min_duration,
+                            filter->sensitivity,
+                            filter->initial_threshold,
+                            filter->semiwaves ? TAP_TRIGGER_ON_BOTH_EDGES :
+                            filter->trigger_on_rising_edge ?
+                            TAP_TRIGGER_ON_RISING_EDGE :
+                            TAP_TRIGGER_ON_FALLING_EDGE);
 
   gst_pad_set_caps (filter->srcpad, othercaps);
   gst_caps_unref (othercaps);
@@ -398,7 +401,7 @@ gst_tapenc_chain (GstPad * pad, GstBuffer * buf)
   while(bufsofar < buflen) {
     uint8_t got_pulse;
     uint32_t pulse;
-    bufsofar += tap_get_pulse(filter->tap, data + bufsofar, buflen - bufsofar, &got_pulse, &pulse);
+    bufsofar += tapenc_get_pulse(filter->tap, data + bufsofar, buflen - bufsofar, &got_pulse, &pulse);
     if (got_pulse)
       ret = add_pulse_to_outbuf(filter, pulse);
   }
