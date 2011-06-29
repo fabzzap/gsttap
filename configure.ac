@@ -71,7 +71,7 @@ fi
 
 AC_CHECK_HEADER(tapencoder.h,
   [
-    AC_CHECK_LIB(tapencoder,tap_get_pulse,,
+    AC_CHECK_LIB(tapencoder,tapenc_get_pulse,,
       [
         AC_MSG_ERROR([
 	             You need to install or upgrade the tapencoder library.
@@ -88,7 +88,7 @@ AC_CHECK_HEADER(tapencoder.h,
 
 AC_CHECK_HEADER(tapdecoder.h,
   [
-    AC_CHECK_LIB(tapdecoder,tap_set_pulse,,
+    AC_CHECK_LIB(tapdecoder,tapdec_set_pulse,,
       [
         AC_MSG_ERROR([
 	             You need to install or upgrade the tapdecoder library.

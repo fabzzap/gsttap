@@ -227,8 +227,8 @@ gst_tapdec_class_init (GstTapDecClass * klass)
   gstelement_class->change_state = gst_tapdec_change_state;
 
   g_object_class_install_property (gobject_class, PROP_VOLUME,
-      g_param_spec_uint ("volume", "Volume", "Volume", 0, INT_MAX,
-          254<<23, G_PARAM_READWRITE));
+      g_param_spec_uint ("volume", "Volume", "Volume", 0, 255,
+          254, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_TRIGGER_ON_RISING_EDGE,
       g_param_spec_boolean ("rising_edge", "Trigger on rising edge", "If true, a rising edge is a boundary between pulses. Otherwise, a falling edge. The latter is recommended in case the audio system inverts the waveforms. If semiwaves are used, this is ignored",
           TRUE, G_PARAM_READWRITE));
