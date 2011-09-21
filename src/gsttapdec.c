@@ -87,7 +87,7 @@ struct _GstTapDec
   GstElement element;
   GstPad *sinkpad, *srcpad;
 
-  gboolean trigger_on_rising_edge;
+  gboolean inverted;
   guint volume;
   guint waveform;
 
@@ -161,7 +161,7 @@ gst_tapdec_set_property (GObject * object, guint prop_id,
       filter->volume = g_value_get_uint (value);
       break;
     case PROP_TRIGGER_ON_RISING_EDGE:
-      filter->trigger_on_rising_edge = g_value_get_boolean (value);
+      filter->inverted = g_value_get_boolean (value);
       break;
     case PROP_WAVEFORM:
       filter->waveform = g_value_get_uint (value);
@@ -183,7 +183,7 @@ gst_tapdec_get_property (GObject * object, guint prop_id,
       g_value_set_uint (value, filter->volume);
       break;
     case PROP_TRIGGER_ON_RISING_EDGE:
-      g_value_set_boolean (value, filter->trigger_on_rising_edge);
+      g_value_set_boolean (value, filter->inverted);
       break;
     case PROP_WAVEFORM:
       g_value_set_uint (value, filter->waveform);
@@ -230,7 +230,7 @@ gst_tapdec_class_init (GstTapDecClass * klass)
       g_param_spec_uint ("volume", "Volume", "Volume", 0, 255,
           254, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_TRIGGER_ON_RISING_EDGE,
-      g_param_spec_boolean ("rising_edge", "Trigger on rising edge", "If true, a rising edge is a boundary between pulses. Otherwise, a falling edge. The latter is recommended in case the audio system inverts the waveforms. If semiwaves are used, this is ignored",
+      g_param_spec_boolean ("inverted", "Inverted waveform", "If true, the output waveform will be  inverted: a positive signal will become negative and vice versa",
           TRUE, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_WAVEFORM,
       g_param_spec_uint ("waveform", "Waveform", "0=square, 1=triangle, 2=sine (if tapencoder does not support sine, will fall back to square)", 0, 2,
@@ -260,11 +260,9 @@ gst_tapdec_sinkpad_set_caps (GstPad * pad, GstCaps * caps)
     return FALSE;
   }
 
-  filter->tap = tapdec_init(filter->volume,
-                            semiwaves ? TAP_TRIGGER_ON_BOTH_EDGES :
-                            filter->trigger_on_rising_edge ?
-                            TAP_TRIGGER_ON_RISING_EDGE :
-                            TAP_TRIGGER_ON_FALLING_EDGE,
+  filter->tap = tapdecoder_init(filter->volume,
+                            filter->inverted,
+                            semiwaves,
                             filter->waveform==2 ? TAPDEC_SINE :
                             filter->waveform==1 ? TAPDEC_TRIANGLE :
                             TAPDEC_SQUARE

@@ -88,7 +88,7 @@ struct _GstTapEnc
 
   GstPad *sinkpad, *srcpad;
 
-  gboolean trigger_on_rising_edge;
+  gboolean inverted;
 
   gboolean semiwaves;
 
@@ -120,7 +120,7 @@ enum
   PROP_0,
   PROP_MIN_DURATION,
   PROP_SENSITIVITY,
-  PROP_TRIGGER_ON_RISING_EDGE,
+  PROP_INVERTED,
   PROP_SEMIWAVES,
   PROP_INITIAL_THRESHOLD
 };
@@ -210,8 +210,8 @@ gst_tapenc_set_property (GObject * object, guint prop_id,
     case PROP_INITIAL_THRESHOLD:
       filter->initial_threshold = (guchar) g_value_get_uint (value);
       break;
-    case PROP_TRIGGER_ON_RISING_EDGE:
-      filter->trigger_on_rising_edge = g_value_get_boolean (value);
+    case PROP_INVERTED:
+      filter->inverted = g_value_get_boolean (value);
       break;
     case PROP_SEMIWAVES:
       filter->semiwaves = g_value_get_boolean (value);
@@ -238,8 +238,8 @@ gst_tapenc_get_property (GObject * object, guint prop_id,
     case PROP_INITIAL_THRESHOLD:
       g_value_set_uint (value, filter->initial_threshold);
       break;
-    case PROP_TRIGGER_ON_RISING_EDGE:
-      g_value_set_boolean (value, filter->trigger_on_rising_edge);
+    case PROP_INVERTED:
+      g_value_set_boolean (value, filter->inverted);
       break;
     case PROP_SEMIWAVES:
       g_value_set_boolean (value, filter->semiwaves);
@@ -311,8 +311,8 @@ gst_tapenc_class_init (GstTapEncClass * klass)
   g_object_class_install_property (gobject_class, PROP_SENSITIVITY,
       g_param_spec_uint ("sensitivity", "Sensitivity", "How much the detector should be sensitive to a wave much smaller than the previous one. 100 = detect all waves. 0 = all waves less than 1/2 high than the previous one are ignored", 0, 100,
           12, G_PARAM_READWRITE));
-  g_object_class_install_property (gobject_class, PROP_TRIGGER_ON_RISING_EDGE,
-      g_param_spec_boolean ("rising_edge", "Trigger on rising edge", "If true, a rising edge is a boundary between pulses. Otherwise, a falling edge. The latter is recommended in case the audio system inverts the waveforms. If semiwaves are used, this is ignored",
+  g_object_class_install_property (gobject_class, PROP_INVERTED,
+      g_param_spec_boolean ("inverted", "Inverted waveform", "If true, the input waveform will be treated as inverted (upside down). A positive signal will be interpreted as negative and vice versa",
           TRUE, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_SEMIWAVES,
       g_param_spec_boolean ("semiwaves", "Use semiwaves", "If true, both rising edges and falling edges are boundaries between pulses. Some C16/+4 tapes need it",
@@ -345,13 +345,11 @@ gst_tapenc_sinkpad_set_caps (GstPad * pad, GstCaps * caps)
       "semiwaves", G_TYPE_BOOLEAN, filter->semiwaves, 
       NULL);
 
-  filter->tap = tapenc_init(filter->min_duration,
+  filter->tap = tapencoder_init(filter->min_duration,
                             filter->sensitivity,
                             filter->initial_threshold,
-                            filter->semiwaves ? TAP_TRIGGER_ON_BOTH_EDGES :
-                            filter->trigger_on_rising_edge ?
-                            TAP_TRIGGER_ON_RISING_EDGE :
-                            TAP_TRIGGER_ON_FALLING_EDGE);
+                            filter->inverted,
+                            filter->semiwaves);
 
   gst_pad_set_caps (filter->srcpad, othercaps);
   gst_caps_unref (othercaps);
@@ -399,10 +397,9 @@ gst_tapenc_chain (GstPad * pad, GstBuffer * buf)
   GstFlowReturn ret = GST_FLOW_OK;
 
   while(bufsofar < buflen) {
-    uint8_t got_pulse;
     uint32_t pulse;
-    bufsofar += tapenc_get_pulse(filter->tap, data + bufsofar, buflen - bufsofar, &got_pulse, &pulse);
-    if (got_pulse)
+    bufsofar += tapenc_get_pulse(filter->tap, data + bufsofar, buflen - bufsofar, &pulse);
+    if (pulse > 0)
       ret = add_pulse_to_outbuf(filter, pulse);
   }
 
