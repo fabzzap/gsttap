@@ -8,7 +8,7 @@ dnl required versions of gstreamer and plugins-base
 GST_REQUIRED=0.10.16
 GSTPB_REQUIRED=0.10.16
 
-AC_CONFIG_SRCDIR([src/plugin.c])
+AC_CONFIG_SRCDIR([tap/plugin.c])
 AC_CONFIG_HEADERS([config.h])
 
 dnl required version of automake
@@ -62,44 +62,39 @@ PKG_CHECK_MODULES(GST, [
 AC_ARG_WITH(libtap-includes, [Where the header files for libtap are located])
 AC_ARG_WITH(libtap-libs, [Where the libtap library is located])
 
-if test -n "$with_libtap_includes"; then
-  CPPFLAGS="-I$with_libtap_includes $CPPFLAGS"
-fi
-if test -n "$with_libtap_libs"; then
-  LDFLAGS="-L$with_libtap_libs $LDFLAGS"
-fi
-
-AC_CHECK_HEADER(tapencoder.h,
-  [
-    AC_CHECK_LIB(tapencoder,tapenc_get_pulse,,
+translit(dnm, m, l) AM_CONDITIONAL(USE_TAPENC, true)
+AG_GST_CHECK_FEATURE(TAPENC, [TAP audio encoder], tapenc, [
+    TAPENC_LIBS=-ltapencoder
+    TAPENC_CPPFLAGS="-I$with_libtap_includes"
+    TAPENC_LDFLAGS="-L$with_libtap_libs"
+    CPPFLAGS="$CPPFLAGS $TAPENC_CPPFLAGS"
+    LDFLAGS="$LDFLAGS $TAPENC_LDFLAGS"
+    AC_CHECK_HEADER(tapencoder.h,
       [
-        AC_MSG_ERROR([
-	             You need to install or upgrade the tapencoder library.
-		    ])
+        AC_CHECK_LIB(tapencoder,tapenc_get_pulse,HAVE_TAPENC=yes)
       ]
     )
-  ],
-  [
-    AC_MSG_ERROR([
-                 You need to install or upgrade the tapencoder.h header file.
-		])
+    AC_SUBST(TAPENC_LIBS)
+    AC_SUBST(TAPENC_CPPFLAGS)
+    AC_SUBST(TAPENC_LDFLAGS)
   ]
 )
 
-AC_CHECK_HEADER(tapdecoder.h,
-  [
-    AC_CHECK_LIB(tapdecoder,tapdec_set_pulse,,
+translit(dnm, m, l) AM_CONDITIONAL(USE_TAPDEC, true)
+AG_GST_CHECK_FEATURE(TAPDEC, [TAP audio decoder], tapdec, [
+    TAPDEC_LIBS=-ltapdecoder
+    TAPDEC_CPPFLAGS="-I$with_libtap_includes"
+    TAPDEC_LDFLAGS="-L$with_libtap_libs"
+    CPPFLAGS="$CPPFLAGS $TAPDEC_CPPFLAGS"
+    LDFLAGS="$LDFLAGS $TAPDEC_LDFLAGS"
+    AC_CHECK_HEADER(tapdecoder.h,
       [
-        AC_MSG_ERROR([
-	             You need to install or upgrade the tapdecoder library.
-		    ])
+        AC_CHECK_LIB(tapdecoder,tapdec_set_pulse,HAVE_TAPDEC=yes)
       ]
     )
-  ],
-  [
-    AC_MSG_ERROR([
-                 You need to install or upgrade the tapdecoder.h header file.
-		])
+    AC_SUBST(TAPDEC_LIBS)
+    AC_SUBST(TAPDEC_CPPFLAGS)
+    AC_SUBST(TAPDEC_LDFLAGS)
   ]
 )
 
@@ -123,9 +118,14 @@ fi
 AC_SUBST(plugindir)
 
 dnl set proper LDFLAGS for plugins
-GST_PLUGIN_LDFLAGS='-module -avoid-version -export-symbols-regex [_]*\(gst_\|Gst\|GST_\).* -L. -ltapencoder'
+GST_PLUGIN_LDFLAGS='-module -avoid-version -export-symbols-regex [_]*\(gst_\|Gst\|GST_\).* -L.'
 AC_SUBST(GST_PLUGIN_LDFLAGS)
 
-AC_CONFIG_FILES([Makefile src/Makefile])
+AC_CONFIG_FILES([
+Makefile
+tap/Makefile
+tapenc/Makefile
+tapdec/Makefile
+])
 AC_OUTPUT
 

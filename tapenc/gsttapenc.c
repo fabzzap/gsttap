@@ -62,7 +62,6 @@
 
 #include <gst/gst.h>
 
-#include "gsttapenc.h"
 #include "tapencoder.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_tapenc_debug);
@@ -313,7 +312,7 @@ gst_tapenc_class_init (GstTapEncClass * klass)
           12, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_INVERTED,
       g_param_spec_boolean ("inverted", "Inverted waveform", "If true, the input waveform will be treated as inverted (upside down). A positive signal will be interpreted as negative and vice versa",
-          TRUE, G_PARAM_READWRITE));
+          FALSE, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_SEMIWAVES,
       g_param_spec_boolean ("semiwaves", "Use semiwaves", "If true, both rising edges and falling edges are boundaries between pulses. Some C16/+4 tapes need it",
           FALSE, G_PARAM_READWRITE));
@@ -446,11 +445,27 @@ gst_tapenc_init (GstTapEnc * filter,
   filter->outbuf = NULL;
 }
 
-gboolean
+static gboolean
 gst_tapenc_register (GstPlugin * plugin)
 {
   GST_DEBUG_CATEGORY_INIT (gst_tapenc_debug, "tapenc",
       0, "Commodore 64 TAP format encoder");
   return gst_element_register (plugin, "tapenc", GST_RANK_NONE, GST_TYPE_TAPENC);
 }
+
+/* gstreamer looks for this structure to register tapencoders
+ *
+ *
+ */
+GST_PLUGIN_DEFINE (
+    GST_VERSION_MAJOR,
+    GST_VERSION_MINOR,
+    "tapenc",
+    "Commodore tape encoder support",
+    gst_tapenc_register,
+    VERSION,
+    "LGPL",
+    PACKAGE,
+    "http://wav-prg.sourceforge.net/"
+);
 

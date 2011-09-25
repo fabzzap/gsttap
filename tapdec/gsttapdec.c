@@ -44,7 +44,7 @@
  */
 
 /**
- * SECTION:element-tapenc
+ * SECTION:element-tapdec
  *
  * Convert a Commodore TAP stream to audio format.
  *
@@ -62,7 +62,6 @@
 
 #include <gst/gst.h>
 
-#include "gsttapdec.h"
 #include "tapdecoder.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_tapdec_debug);
@@ -233,7 +232,7 @@ gst_tapdec_class_init (GstTapDecClass * klass)
       g_param_spec_boolean ("inverted", "Inverted waveform", "If true, the output waveform will be  inverted: a positive signal will become negative and vice versa",
           TRUE, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_WAVEFORM,
-      g_param_spec_uint ("waveform", "Waveform", "0=square, 1=triangle, 2=sine (if tapencoder does not support sine, will fall back to square)", 0, 2,
+      g_param_spec_uint ("waveform", "Waveform", "0=square, 1=triangle, 2=sine (if tapdecoder does not support sine, will fall back to square)", 0, 2,
           0, G_PARAM_READWRITE));
 }
 
@@ -361,11 +360,27 @@ gst_tapdec_init (GstTapDec * filter,
   g_free(properties);
 }
 
-gboolean
+static gboolean
 gst_tapdec_register (GstPlugin * plugin)
 {
   GST_DEBUG_CATEGORY_INIT (gst_tapdec_debug, "tapdec",
       0, "Commodore 64 TAP format decoder");
   return gst_element_register (plugin, "tapdec", GST_RANK_SECONDARY, GST_TYPE_TAPDEC);
 }
+
+/* gstreamer looks for this structure to register tapencoders
+ *
+ *
+ */
+GST_PLUGIN_DEFINE (
+    GST_VERSION_MAJOR,
+    GST_VERSION_MINOR,
+    "tapdec",
+    "Commodore tape decoder support",
+    gst_tapdec_register,
+    VERSION,
+    "LGPL",
+    PACKAGE,
+    "http://wav-prg.sourceforge.net/"
+);
 

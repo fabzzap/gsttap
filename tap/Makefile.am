@@ -3,9 +3,7 @@
 plugin_LTLIBRARIES = libgsttap.la
 
 # sources used to compile this plug-in
-libgsttap_la_SOURCES = gsttapenc.c gsttapenc.h \
-gsttapdec.c gsttapdec.h \
-gstdmpenc.c gstdmpenc.h \
+libgsttap_la_SOURCES = gstdmpenc.c gstdmpenc.h \
 gstdmpdec.c gstdmpdec.h \
 gsttapfileenc.c gsttapfileenc.h \
 gsttapfiledec.c gsttapfiledec.h \
@@ -19,5 +17,5 @@ libgsttap_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 libgsttap_la_LIBTOOLFLAGS = --tag=disable-static
 
 # headers we need but don't want installed
-noinst_HEADERS = gsttapenc.h gsttapdec.h gstdmpenc.h gstdmpdec.h gsttapfileenc.h gsttapfiledec.h gsttapconvert.h
+noinst_HEADERS = gstdmpenc.h gstdmpdec.h gsttapfileenc.h gsttapfiledec.h gsttapconvert.h
 

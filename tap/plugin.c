@@ -52,8 +52,6 @@
 
 #include <gst/gst.h>
 
-#include "gsttapenc.h"
-#include "gsttapdec.h"
 #include "gstdmpdec.h"
 #include "gstdmpenc.h"
 #include "gsttapfileenc.h"
@@ -64,9 +62,7 @@ static gboolean
 plugin_init (GstPlugin * plugin)
 {
   return
-    gst_tapenc_register (plugin)
- && gst_tapdec_register (plugin)
- && gst_dmpenc_register (plugin)
+    gst_dmpenc_register (plugin)
  && gst_dmpdec_register (plugin)
  && gst_tapfileenc_register (plugin)
  && gst_tapfiledec_register (plugin)
@@ -82,7 +78,7 @@ GST_PLUGIN_DEFINE (
     GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
     "tap",
-    "Commodore 64 tape support",
+    "Commodore tape file formats and frequency conversion support",
     plugin_init,
     VERSION,
     "LGPL",
