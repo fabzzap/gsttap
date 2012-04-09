@@ -160,35 +160,7 @@ gst_tapfiledec_class_init (GstTapFileDecClass * klass)
 
 /* GstElement vmethod implementations */
 
-/* chain function
- * this function does the actual processing
- */
 #define DMP_OUTPUT_SIZE 128
-
-/*static GstFlowReturn
-add_pulse_to_outbuf (GstPad * pad, GstBuffer ** buf, guint pulse)
-{
-  guint *data;
-  GstFlowReturn ret = GST_FLOW_OK;
-
-  if(*buf != NULL &&
-     GST_BUFFER_SIZE(*buf) + sizeof(guint) > DMP_OUTPUT_SIZE) {
-    ret = gst_pad_push (pad, *buf);
-    *buf = NULL;
-  }
-
-  if(*buf == NULL) {
-    *buf = gst_buffer_new_and_alloc (DMP_OUTPUT_SIZE);
-    GST_BUFFER_SIZE(*buf) = 0;
-    gst_buffer_set_caps (*buf, GST_PAD_CAPS (pad));
-  }
-
-  data = (guint*)(GST_BUFFER_DATA(*buf) + GST_BUFFER_SIZE(*buf));
-  *data = pulse;
-  GST_BUFFER_SIZE(*buf) += sizeof(guint);
-
-  return ret;
-}*/
 
 static GstCaps *
 gst_tapfiledec_srcpad_get_caps (GstPad * pad)
@@ -348,6 +320,9 @@ get_pulse_from_tap(GstTapFileDec * filter, read_func read_data, flush_func flush
   return TRUE;
 }
 
+/* chain function
+ * this function does the actual processing
+ */
 static GstFlowReturn
 gst_tapfiledec_chain (GstPad * pad, GstBuffer * buf)
 {
