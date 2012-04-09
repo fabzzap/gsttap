@@ -88,10 +88,14 @@ struct _GstTapFileDec
   GstPad *sinkpad, *srcpad;
 
   gboolean read_header;
+  gboolean invalid_header;
 
   guchar version;
 
+  guint64 in_offset;
+
   GstAdapter * adapter;
+  GstAdapter * out_adapter;
 };
 
 struct _GstTapFileDecClass
@@ -161,7 +165,7 @@ gst_tapfiledec_class_init (GstTapFileDecClass * klass)
  */
 #define DMP_OUTPUT_SIZE 128
 
-static GstFlowReturn
+/*static GstFlowReturn
 add_pulse_to_outbuf (GstPad * pad, GstBuffer ** buf, guint pulse)
 {
   guint *data;
@@ -184,7 +188,7 @@ add_pulse_to_outbuf (GstPad * pad, GstBuffer ** buf, guint pulse)
   GST_BUFFER_SIZE(*buf) += sizeof(guint);
 
   return ret;
-}
+}*/
 
 static GstCaps *
 gst_tapfiledec_srcpad_get_caps (GstPad * pad)
@@ -198,61 +202,90 @@ gst_tapfiledec_srcpad_get_caps (GstPad * pad)
   return gst_caps_copy (result);
 }
 
+typedef GstBuffer* (*read_func)(GstTapFileDec * filter, guint numbytes);
+typedef void (*flush_func)(GstTapFileDec * filter);
+
+static GstBuffer* read_from_adapter(GstTapFileDec * filter, guint numbytes)
+{
+  GstBuffer* retval;
+  if (gst_adapter_available(filter->adapter) < filter->in_offset + numbytes)
+    return NULL;
+  retval = gst_buffer_new_and_alloc(numbytes);
+  gst_adapter_copy (filter->adapter, GST_BUFFER_DATA(retval), filter->in_offset, numbytes);
+  filter->in_offset += numbytes;
+  return retval;
+}
+
+static GstBuffer* read_from_peer(GstTapFileDec * filter, guint numbytes)
+{
+  GstBuffer* retval;
+  if (gst_pad_pull_range (filter->sinkpad, filter->in_offset, numbytes, &retval) == GST_FLOW_OK) {
+    filter->in_offset += GST_BUFFER_SIZE(retval);
+    return retval;
+  }
+  return NULL;
+}
+
+static void flush_adapter(GstTapFileDec * filter)
+{
+  gst_adapter_flush(filter->adapter, filter->in_offset);
+  filter->in_offset = 0;
+}
+
+static void flush_peer(GstTapFileDec * filter)
+{
+}
 
 #define TAPFILEDEC_HEADER_SIZE 20
 #define ONE_BYTE_OVERFLOW 0x100
 #define THREE_BYTE_OVERFLOW 0xFFFFFF
 
-static GstFlowReturn
-gst_tapfiledec_chain (GstPad * pad, GstBuffer * buf)
+static gboolean
+get_pulse_from_tap(GstTapFileDec * filter, read_func read_data, flush_func flush_data, guint *pulse)
 {
-  GstTapFileDec *filter = GST_TAPFILEDEC (GST_OBJECT_PARENT (pad));
-  GstFlowReturn ret = GST_FLOW_OK, ret2;
-  GstBuffer * newbuf = NULL;
-  guint pulse = 0;
-  guint peeked_bytes = 0;
+  gboolean overflow_occurred;
 
-  gst_adapter_push (filter->adapter, buf);
-  if (!filter->read_header && gst_adapter_available (filter->adapter) >= TAPFILEDEC_HEADER_SIZE) {
+  if (!filter->read_header && !filter->invalid_header) {
     const char expected_signature1[] = "C64-TAPE-RAW";
     const char expected_signature2[] = "C16-TAPE-RAW";
-    GstBuffer *header_buf = gst_adapter_take_buffer (filter->adapter, TAPFILEDEC_HEADER_SIZE);
+    GstBuffer *header_buf = read_data(filter, TAPFILEDEC_HEADER_SIZE);
     guint8 *header_data;
-    gboolean header_valid;
     GstCaps * srccaps;
     GstStructure * srcstructure;
     GValue rate = {0}, semiwaves = {0};
     guchar machine, video_standard;
 
-    if (!header_buf)
-      return GST_FLOW_ERROR;
+    if (header_buf == NULL)
+      return FALSE;
+    header_data = GST_BUFFER_DATA(header_buf);
 
-    header_data = GST_BUFFER_DATA (header_buf);
-    header_valid = !memcmp (header_data, expected_signature1, strlen(expected_signature1))
-                || !memcmp (header_data, expected_signature2, strlen(expected_signature2));
+    filter->invalid_header =
+       memcmp (header_data, expected_signature1, strlen(expected_signature1)) != 0
+    && memcmp (header_data, expected_signature2, strlen(expected_signature2)) != 0;
     header_data += strlen(expected_signature1);
     filter->version = *header_data++;
-    header_valid = header_valid && 
-     (filter->version == 0
-   || filter->version == 1
-   || filter->version == 2
+    filter->invalid_header = filter->invalid_header || 
+     (filter->version != 0
+   && filter->version != 1
+   && filter->version != 2
      );
     machine = *header_data++;
-    header_valid = header_valid && 
-     (machine == 0 /* C64 */
-   || machine == 1 /* VIC20 */
-   || machine == 2 /* C16 */
+    filter->invalid_header = filter->invalid_header || 
+     (machine != 0 /* C64 */
+   && machine != 1 /* VIC20 */
+   && machine != 2 /* C16 */
      );
     video_standard = *header_data++;
-    header_valid = header_valid && 
-     (video_standard == 0 /* PAL */
-   || video_standard == 1 /* NTSC */
+    filter->invalid_header = filter->invalid_header || 
+     (video_standard != 0 /* PAL */
+   && video_standard != 1 /* NTSC */
      );
 
-    gst_buffer_unref (header_buf);
+    gst_buffer_unref(header_buf);
+    flush_data (filter);
 
-    if (!header_valid)
-      return GST_FLOW_ERROR;
+    if (filter->invalid_header)
+      return FALSE;
 
     g_value_init (&rate, G_TYPE_INT);
     g_value_set_int (&rate, tap_clocks[machine][video_standard]);
@@ -271,51 +304,108 @@ gst_tapfiledec_chain (GstPad * pad, GstBuffer * buf)
 
   /* Don't go past this point before finishing with the header */
   if (!filter->read_header)
-    return GST_FLOW_OK;
+    return FALSE;
 
-  while (gst_adapter_available (filter->adapter) > peeked_bytes) {
-    const guint8 * inbytes;
+  *pulse = 0;
+
+  do {
+    GstBuffer *inbuf = read_data(filter, 1);
+    GstBuffer *inbuf2 = NULL;
+    guint8 *inbytes;
     guint inpulse;
-    gboolean overflow_occurred = FALSE;
+    gboolean need_to_read_3_bytes = FALSE;
 
-    inbytes = gst_adapter_peek (filter->adapter, peeked_bytes + 1);
-    inpulse = inbytes[peeked_bytes];
-    peeked_bytes++;
-    if (inpulse == 0) {
-      if (filter->version == 0) {
+    overflow_occurred = FALSE;
+    if (inbuf == NULL)
+      return FALSE;
+    inbytes = GST_BUFFER_DATA(inbuf);
+    if (inbytes[0] == 0) {
+      if (filter->version == 0)
         inpulse = ONE_BYTE_OVERFLOW;
-        overflow_occurred = TRUE;
-      }
       else {
-        inbytes = gst_adapter_peek (filter->adapter, peeked_bytes + 3);
-        if (!inbytes)
-          break;
-        inpulse = GST_READ_UINT24_LE (inbytes + peeked_bytes);
-        peeked_bytes += 3;
-        if (inpulse == THREE_BYTE_OVERFLOW)
-          overflow_occurred = TRUE;
-        inpulse /= 8;
+        need_to_read_3_bytes = TRUE;
+        inbuf2 = read_data(filter, 3);
+        if (inbuf2) {
+          inbytes = GST_BUFFER_DATA(inbuf2);
+          inpulse = GST_READ_UINT24_LE (inbytes);
+          if (inpulse == THREE_BYTE_OVERFLOW)
+            overflow_occurred = TRUE;
+          inpulse /= 8;
+        }
       }
     }
-    pulse += inpulse;
-    if (!overflow_occurred) {
-      gst_adapter_flush (filter->adapter, peeked_bytes);
-      peeked_bytes = 0;
-      ret2 = add_pulse_to_outbuf (filter->srcpad, &newbuf, pulse);
-      pulse = 0;
-      if (ret2 != GST_FLOW_OK)
-        ret = ret2;
+    else
+      inpulse = inbytes[0];
+    gst_buffer_unref(inbuf);
+    if (need_to_read_3_bytes) {
+      if(inbuf2 == NULL)
+        return FALSE;
+      gst_buffer_unref(inbuf2);
     }
-  }
-  if (newbuf != NULL) {
-    ret2 = gst_pad_push (filter->srcpad, newbuf);
-    if (ret2 != GST_FLOW_OK)
-      ret = ret2;
-  }
-
-  return ret;
+    *pulse += inpulse;
+    flush_data (filter);
+  } while (overflow_occurred);
+  return TRUE;
 }
 
+static GstFlowReturn
+gst_tapfiledec_chain (GstPad * pad, GstBuffer * buf)
+{
+  GstTapFileDec *filter = GST_TAPFILEDEC (GST_OBJECT_PARENT (pad));
+  guint32 pulse;
+
+  gst_adapter_push(filter->adapter, buf);
+  while(get_pulse_from_tap(filter, read_from_adapter, flush_adapter, &pulse)) {
+    GstBuffer* buf = gst_buffer_new_and_alloc(sizeof(pulse));
+    guint outbytes;
+
+    *(guint32*)GST_BUFFER_DATA(buf) = pulse;
+    gst_adapter_push(filter->out_adapter, buf);
+    outbytes = gst_adapter_available(filter->out_adapter);
+    if (outbytes >= DMP_OUTPUT_SIZE) {
+      GstBuffer *outbuf = gst_adapter_take_buffer(filter->out_adapter, outbytes);
+      GstFlowReturn retval;
+
+      gst_buffer_set_caps (outbuf, GST_PAD_CAPS (filter->srcpad));
+      retval = gst_pad_push(filter->srcpad, outbuf);
+      if (retval != GST_FLOW_OK)
+        return retval;
+    }
+  }
+  return filter->invalid_header ? GST_FLOW_ERROR : GST_FLOW_OK;
+}
+
+static gboolean
+gst_tapfiledec_get_range (GstPad     * pad,
+			 guint64      offset,
+			 guint        length,
+			 GstBuffer ** buf)
+{
+  GstTapFileDec *filter = GST_TAPFILEDEC (GST_OBJECT_PARENT (pad));
+  *buf = gst_buffer_new_and_alloc (length);
+  GST_BUFFER_SIZE(*buf) = 0;
+  while(GST_BUFFER_SIZE(*buf) + sizeof(guint32) <= length) {
+    if (!get_pulse_from_tap(filter, read_from_peer, flush_peer, (guint32*)(GST_BUFFER_DATA(*buf) + GST_BUFFER_SIZE(*buf)))) {
+      if (filter->invalid_header) {
+        gst_buffer_unref(*buf);
+        return GST_FLOW_ERROR;
+      }
+      break;
+    }
+    GST_BUFFER_SIZE(*buf) += sizeof(guint32);
+  }
+  return GST_FLOW_OK;
+}
+
+static gboolean
+gst_tapfiledec_activate (GstPad * pad)
+{
+  GstTapFileDec *filter = GST_TAPFILEDEC (GST_OBJECT_PARENT (pad));
+  if (GST_PAD_ACTIVATE_MODE (filter->srcpad) == GST_ACTIVATE_PULL) {
+    return gst_pad_activate_pull (pad, TRUE);
+  }
+  return gst_pad_activate_push (pad, TRUE);
+}
 
 /* initialize the new element
  * instantiate pads and add them to element
@@ -334,12 +424,16 @@ gst_tapfiledec_init (GstTapFileDec * filter,
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
   gst_pad_set_getcaps_function (filter->srcpad,
                                 GST_DEBUG_FUNCPTR(gst_tapfiledec_srcpad_get_caps));
-
+  gst_pad_set_getrange_function (filter->srcpad,
+      gst_tapfiledec_get_range);
+  gst_pad_set_activate_function (filter->sinkpad, gst_tapfiledec_activate);
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
 
   filter->adapter = gst_adapter_new ();
+  filter->out_adapter = gst_adapter_new ();
   filter->read_header = FALSE;
+  filter->invalid_header = FALSE;
 }
 
 gboolean
