@@ -53,7 +53,6 @@
 #include <gst/gst.h>
 
 #include "gstdmpdec.h"
-#include "gstdmpenc.h"
 #include "gsttapfileenc.h"
 #include "gsttapfiledec.h"
 #include "gsttapconvert.h"
@@ -62,15 +61,14 @@ static gboolean
 plugin_init (GstPlugin * plugin)
 {
   return
-    gst_dmpenc_register (plugin)
- && gst_dmpdec_register (plugin)
+    gst_dmpdec_register (plugin)
  && gst_tapfileenc_register (plugin)
  && gst_tapfiledec_register (plugin)
  && gst_tapconvert_register (plugin)
 ;
 }
 
-/* gstreamer looks for this structure to register tapencoders
+/* gstreamer looks for this structure to register tap file manipulation
  *
  * 
  */

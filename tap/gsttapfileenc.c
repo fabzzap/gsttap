@@ -1,8 +1,6 @@
 /*
  * GStreamer
- * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
- * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
- * Copyright (C) 2011 Fabrizio Gennari <fabrizio.ge@tiscali.it>
+ * Copyright (C) 2011-2013 Fabrizio Gennari <fabrizio.ge@tiscali.it>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -61,6 +59,7 @@
 #endif
 
 #include <gst/gst.h>
+#include <gst/base/gstbytewriter.h>
 #include <string.h>
 
 #include "gsttapfileenc.h"
@@ -77,7 +76,7 @@
 #define GST_IS_TAPFILEENC_CLASS(klass) \
   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_TAPFILEENC))
 
-typedef struct _GstTapFileEnc      GstTapFileEnc;
+typedef struct _GstTapFileEnc GstTapFileEnc;
 typedef struct _GstTapFileEncClass GstTapFileEncClass;
 
 struct _GstTapFileEnc
@@ -86,13 +85,12 @@ struct _GstTapFileEnc
 
   GstPad *sinkpad, *srcpad;
 
-  guint rate;
-
   gboolean sent_header;
   gboolean force_version_0;
   guchar machine_byte;
   guchar video_byte;
   guchar version;
+  gboolean last_was_overflow;
 
   guint length;
 };
@@ -120,10 +118,10 @@ enum
   PROP_FORCE_VERSION_0
 };
 
-static const guint tap_clocks[][2]={
-  {985248,1022727}, /* C64 */
-  {1108405,1022727}, /* VIC */
-  {886724,894886}  /* C16 */
+static const guint tap_clocks[][2] = {
+  {985248, 1022727},            /* C64 */
+  {1108405, 1022727},           /* VIC */
+  {886724, 894886}              /* C16 */
 };
 
 /* the capabilities of the inputs and outputs.
@@ -134,7 +132,7 @@ static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("audio/x-tap, "
-    "rate = (int) { 886724 , 894886 , 985248 , 1022727 , 1108405 }")
+        "rate = (int) { 886724 , 894886 , 985248 , 1022727 , 1108405 }")
     );
 
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
@@ -143,27 +141,9 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_STATIC_CAPS ("audio/x-tap-tap")
     );
 
-GST_BOILERPLATE (GstTapFileEnc, gst_tapfileenc, GstElement,
-    GST_TYPE_ELEMENT);
+G_DEFINE_TYPE (GstTapFileEnc, gst_tapfileenc, GST_TYPE_ELEMENT);
 
 /* GObject vmethod implementations */
-
-static void
-gst_tapfileenc_base_init (gpointer gclass)
-{
-  GstElementClass *element_class = GST_ELEMENT_CLASS (gclass);
-
-  gst_element_class_set_details_simple(element_class,
-    "Commodore 64 TAP file writer",
-    "Encoder/Audio",
-    "Writes TAP data as TAP files",
-    "Fabrizio Gennari <fabrizio.ge@tiscali.it>");
-
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&src_factory));
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&sink_factory));
-}
 
 static void
 gst_tapfileenc_set_property (GObject * object, guint prop_id,
@@ -173,10 +153,10 @@ gst_tapfileenc_set_property (GObject * object, guint prop_id,
 
   switch (prop_id) {
     case PROP_MACHINE_BYTE:
-      filter->machine_byte = (guchar) g_value_get_uint (value);
+      filter->machine_byte = (guchar) g_value_get_enum (value);
       break;
     case PROP_VIDEO_BYTE:
-      filter->video_byte = (guchar) g_value_get_uint (value);
+      filter->video_byte = (guchar) g_value_get_enum (value);
       break;
     case PROP_FORCE_VERSION_0:
       filter->force_version_0 = g_value_get_boolean (value);
@@ -195,10 +175,10 @@ gst_tapfileenc_get_property (GObject * object, guint prop_id,
 
   switch (prop_id) {
     case PROP_MACHINE_BYTE:
-      g_value_set_uint (value, filter->machine_byte);
+      g_value_set_enum (value, filter->machine_byte);
       break;
     case PROP_VIDEO_BYTE:
-      g_value_set_uint (value, filter->video_byte);
+      g_value_set_enum (value, filter->video_byte);
       break;
     case PROP_FORCE_VERSION_0:
       g_value_set_boolean (value, filter->force_version_0);
@@ -209,155 +189,120 @@ gst_tapfileenc_get_property (GObject * object, guint prop_id,
   }
 }
 
+/* Machine entry used in extended TAP header */
+#define TAP_MACHINE_C64 0
+#define TAP_MACHINE_VIC 1
+#define TAP_MACHINE_C16 2
+#define TAP_MACHINE_MAX 2
+
+/* Video standards */
+#define TAP_VIDEOTYPE_PAL  0
+#define TAP_VIDEOTYPE_NTSC 1
+#define TAP_VIDEOTYPE_MAX  1
+
+static GType
+gst_machines_get_type (void)
+{
+  static GType machines_type = 0;
+
+  if (machines_type == 0) {
+    static const GEnumValue machines_profiles[] = {
+      {TAP_MACHINE_C64, "C64", "Commodore 64"},
+      {TAP_MACHINE_C16, "C16", "Commodore 16/Plus-4"},
+      {TAP_MACHINE_VIC, "VIC20", "Commodore VIC-20"},
+      {0, NULL, NULL},
+    };
+    machines_type =
+        g_enum_register_static ("GstTapFileEncMachines", machines_profiles);
+  }
+
+  return machines_type;
+}
+
+static GType
+gst_videotypes_get_type (void)
+{
+  static GType videotypes_type = 0;
+
+  if (videotypes_type == 0) {
+    static const GEnumValue videotypes_profiles[] = {
+      {TAP_VIDEOTYPE_PAL, "PAL", "PAL"},
+      {TAP_VIDEOTYPE_NTSC, "NTSC", "NTSC"},
+      {0, NULL, NULL},
+    };
+    videotypes_type =
+        g_enum_register_static ("GstTapFileEncVideotypes", videotypes_profiles);
+  }
+
+  return videotypes_type;
+}
+
 /* initialize the tapfileenc's class */
 static void
 gst_tapfileenc_class_init (GstTapFileEncClass * klass)
 {
   GObjectClass *gobject_class;
-  GstElementClass *gstelement_class;
+  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
 
   gobject_class = (GObjectClass *) klass;
-  gstelement_class = (GstElementClass *) klass;
 
   gobject_class->set_property = gst_tapfileenc_set_property;
   gobject_class->get_property = gst_tapfileenc_get_property;
 
   g_object_class_install_property (gobject_class, PROP_MACHINE_BYTE,
-      g_param_spec_uint ("machine", "Machine", "Tag representing machine for which this dump is intended. 0=C64, 1=VIC20, 2=C16/+4.", 0, 2,
-          0, G_PARAM_READWRITE));
+      g_param_spec_enum ("machine", "Machine",
+          "Machine for which this dump is intended", gst_machines_get_type (),
+          TAP_MACHINE_C64,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
   g_object_class_install_property (gobject_class, PROP_VIDEO_BYTE,
-      g_param_spec_uint ("videotype", "Video type", "Tag representing video type of machine for which this dump is intended. 0=PAL, 1=NTSC.", 0, 100,
-          0, G_PARAM_READWRITE));
+      g_param_spec_enum ("videotype", "Video type",
+          "Video type of machine for which this dump is intended",
+          gst_videotypes_get_type (), TAP_VIDEOTYPE_PAL,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
   g_object_class_install_property (gobject_class, PROP_FORCE_VERSION_0,
-      g_param_spec_boolean ("version_0", "Force version 0", "If true, and incoming stream is not semiwaves, a version 0 TAP file will be created. Otherwise the version will be 1 for full waves and 2 for semiwaves.",
-          FALSE, G_PARAM_READWRITE));
+      g_param_spec_boolean ("version-0", "Force version 0",
+          "If true, and incoming stream is not halfwaves, a version 0 TAP file will be created. Otherwise the version will be 1 for full waves and 2 for halfwaves.",
+          FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
+
+  gst_element_class_set_details_simple (element_class,
+      "Commodore 64 TAP file writer",
+      "Codec/Encoder/Audio",
+      "Writes TAP data as TAP files",
+      "Fabrizio Gennari <fabrizio.ge@tiscali.it>");
+
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&src_factory));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&sink_factory));
 }
 
 /* GstElement vmethod implementations */
-
-/* this function handles the link with other elements */
-static gboolean
-gst_tapfileenc_sinkpad_set_caps (GstPad * pad, GstCaps * caps)
-{
-  GstTapFileEnc *filter = GST_TAPFILEENC (gst_pad_get_parent (pad));
-  GstStructure *structure = gst_caps_get_structure (caps, 0);
-  gint samplerate;
-  gboolean ret = gst_structure_get_int (structure, "rate", &samplerate);
-
-  if (!ret)
-    GST_ERROR_OBJECT (filter, "input caps have no sample rate field");
-  else if (samplerate != tap_clocks[filter->machine_byte][filter->video_byte]) {
-    GST_ERROR_OBJECT (filter, "wrong sample rate");
-    ret = FALSE;
-  }
-
-  if (ret) {
-    gboolean semiwaves;
-    ret = gst_structure_get_boolean (structure, "semiwaves", &semiwaves);
-    if (!ret)
-      GST_ERROR_OBJECT (filter, "input caps have no semiwaves field");
-    else if (semiwaves)
-      filter->version = 2;
-    else
-      filter->version = filter->force_version_0 ? 0 : 1;
-  }
-
-  return ret;
-}
-
-static GstCaps *
-gst_tapfileenc_sinkpad_get_caps (GstPad * pad)
-{
-  GstTapFileEnc *filter = GST_TAPFILEENC (gst_pad_get_parent (pad));
-  GstCaps * ret = gst_caps_copy (gst_pad_get_pad_template_caps (pad));
-  GstStructure *structure = gst_caps_get_structure (ret, 0);
-  GValue value = {0};
-
-  g_value_init (&value, G_TYPE_INT);
-  g_value_set_int (&value, tap_clocks[filter->machine_byte][filter->video_byte]);
-  gst_structure_set_value (structure, "rate", &value);
-
-  return ret;
-}
-
-#define TAP_OUTPUT_SIZE 128
-
-static GstFlowReturn
-push_if_needed (GstPad * pad, GstBuffer ** buf, guint numbytes)
-{
-  GstFlowReturn ret = GST_FLOW_OK;
-  GstTapFileEnc *filter = GST_TAPFILEENC (GST_OBJECT_PARENT (pad));
-
-  if (*buf == NULL || GST_BUFFER_SIZE(*buf) + numbytes > TAP_OUTPUT_SIZE) {
-    GstBuffer * newbuf = gst_buffer_new_and_alloc (TAP_OUTPUT_SIZE);
-    GstCaps *caps = GST_PAD_CAPS(pad);
-
-    GST_BUFFER_SIZE(newbuf) = 0;
-    gst_buffer_set_caps (newbuf, caps);
-    if (*buf != NULL) {
-      ret = gst_pad_push (pad, *buf);
-      filter->length += GST_BUFFER_SIZE(*buf);
-    }
-    *buf = newbuf;
-  }
-  return ret;
-}
-
-static GstFlowReturn
-add_four_bytes_to_outbuf (GstPad * pad, GstBuffer ** buf, guint pulse)
-{
-  guchar *data;
-  GstFlowReturn ret = push_if_needed (pad, buf, 4);
-
-  data = GST_BUFFER_DATA(*buf) + GST_BUFFER_SIZE(*buf);
-  *data++ = 0;
-  GST_WRITE_UINT24_LE(data, pulse);
-  GST_BUFFER_SIZE(*buf) += 4;
-
-  return ret;
-}
-
-static GstFlowReturn
-add_byte_to_outbuf (GstPad * pad, GstBuffer ** buf, guchar pulse)
-{
-  GstFlowReturn ret = push_if_needed (pad, buf, 1);
-
-  GST_BUFFER_DATA(*buf)[GST_BUFFER_SIZE(*buf)] = pulse;
-  GST_BUFFER_SIZE(*buf) ++;
-
-  return ret;
-}
 
 #define OVERFLOW_HI 0xFFFFFF
 #define OVERFLOW_LO 0x800
 
 static GstFlowReturn
-add_pulse_to_outbuf (GstPad * pad, GstBuffer ** buf, guint pulse)
-{
-  if (pulse >= OVERFLOW_LO)
-    return add_four_bytes_to_outbuf (pad, buf, pulse);
-  return add_byte_to_outbuf (pad, buf, (guchar)(pulse / 8));
-}
-
-static GstFlowReturn
-write_header(GstPad * pad
-             , guchar version
-             , guchar machine_byte
-             , guchar video_byte
-             , guint len
-            )
+write_header (GstPad * pad, guchar version, guchar machine_byte,
+    guchar video_byte, guint len)
 {
   GstBuffer *buf = gst_buffer_new_and_alloc (20);
-  guint8 *header = GST_BUFFER_DATA (buf);
-  const char signature[] = "C64-TAPE-RAW";
+  guint8 *header;
+  const char signature_c64[] = "C64-TAPE-RAW";
+  const char signature_c16[] = "C16-TAPE-RAW";
+  GstMapInfo map;
 
-  memcpy (header, signature, strlen(signature));
-  header += strlen(signature);
+  gst_buffer_map (buf, &map, GST_MAP_WRITE);
+  header = map.data;
+  memcpy (header, machine_byte != 2 ? signature_c64 : signature_c16,
+      strlen (signature_c64));
+  header += strlen (signature_c64);
   *header++ = version;
   *header++ = machine_byte;
   *header++ = video_byte;
   *header++ = 0;
   GST_WRITE_UINT32_LE (header, len);
+  gst_buffer_unmap (buf, &map);
   return gst_pad_push (pad, buf);
 }
 
@@ -366,24 +311,20 @@ write_header(GstPad * pad
  */
 
 static GstFlowReturn
-gst_tapfileenc_chain (GstPad * pad, GstBuffer * buf)
+gst_tapfileenc_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 {
-  GstTapFileEnc *filter = GST_TAPFILEENC (GST_OBJECT_PARENT (pad));
-  guint *data = (guint*) GST_BUFFER_DATA(buf);
-  guint buflen = GST_BUFFER_SIZE(buf) / sizeof(int32_t);
+  GstTapFileEnc *filter = GST_TAPFILEENC (parent);
+  GstMapInfo map;
+  guint *data;
+  guint buflen = gst_buffer_get_size (buf) / sizeof (guint32);
   guint bufsofar;
-  GstFlowReturn ret = GST_FLOW_OK, ret2 = GST_FLOW_OK;
-  guint overflow = filter->version != 0 ? OVERFLOW_HI : OVERFLOW_LO;
-  guint overflow_to_write = filter->version != 0 ? OVERFLOW_HI : 0;
-  GstBuffer * newbuf = NULL;
+  GstFlowReturn ret = GST_FLOW_OK;
+  GstByteWriter *writer = gst_byte_writer_new ();
+  guint size;
 
   if (!filter->sent_header) {
-    ret = write_header(filter->srcpad
-                      ,filter->version
-                      ,filter->machine_byte
-                      ,filter->video_byte
-                      , 0 /* real length will be written later */
-                       );
+    ret = write_header (filter->srcpad, filter->version, filter->machine_byte, filter->video_byte, 0    /* real length will be written later */
+        );
 
     if (ret != GST_FLOW_OK) {
       GST_WARNING_OBJECT (filter, "push header failed: flow = %s",
@@ -392,57 +333,123 @@ gst_tapfileenc_chain (GstPad * pad, GstBuffer * buf)
     filter->sent_header = TRUE;
   }
 
+  gst_buffer_map (buf, &map, GST_MAP_READ);
+  data = (guint *) map.data;
   for (bufsofar = 0; bufsofar < buflen; bufsofar++) {
     guint pulse = data[bufsofar];
-    while (pulse >= overflow) {
-      ret2 = add_pulse_to_outbuf(filter->srcpad, &newbuf, overflow_to_write);
-      if (ret2 != GST_FLOW_OK)
-        ret = ret2;
-      pulse -= overflow;
+    if (filter->version == 0) {
+      if (pulse >= OVERFLOW_LO && !filter->last_was_overflow) {
+        gst_byte_writer_put_uint8 (writer, 0);
+        filter->last_was_overflow = TRUE;
+      } else {
+        guint8 pulse8 = pulse / 8;
+        gst_byte_writer_put_uint8 (writer, pulse8);
+        filter->last_was_overflow = FALSE;
+      }
+    } else {
+      while (pulse >= OVERFLOW_HI) {
+        gst_byte_writer_put_uint8 (writer, 0);
+        gst_byte_writer_put_uint24_le (writer, OVERFLOW_HI);
+        pulse -= OVERFLOW_HI;
+      }
+      if (pulse >= OVERFLOW_LO) {
+        gst_byte_writer_put_uint8 (writer, 0);
+        gst_byte_writer_put_uint24_le (writer, pulse);
+      } else {
+        guint8 pulse8 = pulse / 8;
+        gst_byte_writer_put_uint8 (writer, pulse8);
+      }
     }
-    if (pulse == 0) {
-      if (filter->version != 0)
-        ret2 = add_four_bytes_to_outbuf (filter->srcpad, &newbuf, 0);
-    }
-    else
-      ret2 = add_pulse_to_outbuf(filter->srcpad, &newbuf, pulse);
-    if (ret2 != GST_FLOW_OK)
-        ret = ret2;
   }
-  if (newbuf != NULL) {
-    ret2 = gst_pad_push (filter->srcpad, newbuf);
-    filter->length += GST_BUFFER_SIZE(newbuf);
-    if (ret2 != GST_FLOW_OK)
-      ret = ret2;
-  }
+  gst_buffer_unmap (buf, &map);
+
+  size = gst_byte_writer_get_size (writer);
+  if (size > 0) {
+    GstBuffer *newbuf = gst_byte_writer_free_and_get_buffer (writer);
+    ret = gst_pad_push (filter->srcpad, newbuf);
+    filter->length += size;
+  } else
+    gst_byte_writer_free (writer);
 
   return ret;
 }
 
 static gboolean
-gst_tapfileenc_sink_event (GstPad * pad, GstEvent * event)
+gst_tapfileenc_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  GstTapFileEnc *filter = GST_TAPFILEENC (gst_pad_get_parent (pad));
+  GstTapFileEnc *filter = GST_TAPFILEENC (parent);
+  GstSegment segment;
+  GstStructure *structure;
+  gint samplerate;
+  GstCaps *caps;
+  gboolean halfwaves;
 
   switch (GST_EVENT_TYPE (event)) {
-  case GST_EVENT_EOS:
-  /* seek to beginning of file */
-    gst_pad_push_event (filter->srcpad,
-      gst_event_new_new_segment (FALSE, 1.0, GST_FORMAT_BYTES, 0, -1, 0));
-    write_header(filter->srcpad
-                      ,filter->version
-                      ,filter->machine_byte
-                      ,filter->video_byte
-                      ,filter->length
-                       );
-    break;
-  default:
-    break;
+    case GST_EVENT_EOS:
+      /* seek to beginning of file */
+      gst_segment_init (&segment, GST_FORMAT_BYTES);
+      if (!gst_pad_push_event (filter->srcpad,
+              gst_event_new_segment (&segment)))
+        return FALSE;
+      write_header (filter->srcpad, filter->version, filter->machine_byte,
+          filter->video_byte, filter->length);
+      break;
+    case GST_EVENT_CAPS:
+      gst_event_parse_caps (event, &caps);
+      structure = gst_caps_get_structure (caps, 0);
+      if (!gst_structure_get_int (structure, "rate", &samplerate)) {
+        GST_ERROR_OBJECT (filter, "input caps have no sample rate field");
+        return FALSE;
+      } else if (samplerate !=
+          tap_clocks[filter->machine_byte][filter->video_byte]) {
+        GST_ERROR_OBJECT (filter, "wrong sample rate");
+        return FALSE;
+      } else if (!gst_structure_get_boolean (structure, "halfwaves",
+              &halfwaves)) {
+        GST_ERROR_OBJECT (filter, "input caps have no halfwaves field");
+        return FALSE;
+      } else if (halfwaves)
+        filter->version = 2;
+      else
+        filter->version = filter->force_version_0 ? 0 : 1;
+
+      break;
+    default:
+      break;
   }
 
-  return gst_pad_event_default (pad, event);
+  return gst_pad_event_default (pad, parent, event);
 }
 
+static gboolean
+gsttapfileenc_query (GstPad * pad, GstObject * parent, GstQuery * query)
+{
+  gboolean res;
+
+  switch (GST_QUERY_TYPE (query)) {
+    case GST_QUERY_CAPS:
+    {
+      GstTapFileEnc *filter = GST_TAPFILEENC (parent);
+
+      GstCaps *ret = gst_caps_copy (gst_pad_get_pad_template_caps (pad));
+      GstStructure *structure = gst_caps_get_structure (ret, 0);
+      GValue value = { 0 };
+
+      g_value_init (&value, G_TYPE_INT);
+      g_value_set_int (&value,
+          tap_clocks[filter->machine_byte][filter->video_byte]);
+      gst_structure_set_value (structure, "rate", &value);
+      gst_query_set_caps_result (query, ret);
+      res = TRUE;
+
+      break;
+    }
+    default:
+      res = gst_pad_query_default (pad, parent, query);
+      break;
+  }
+  return res;
+}
 
 /* initialize the new element
  * instantiate pads and add them to element
@@ -451,36 +458,19 @@ gst_tapfileenc_sink_event (GstPad * pad, GstEvent * event)
  */
 
 static void
-gst_tapfileenc_init (GstTapFileEnc * filter,
-    GstTapFileEncClass * gclass)
+gst_tapfileenc_init (GstTapFileEnc * filter)
 {
-  guint i, nproperties;
-  GParamSpec ** properties = g_object_class_list_properties (G_OBJECT_GET_CLASS(filter), &nproperties);
-
   filter->sinkpad = gst_pad_new_from_static_template (&sink_factory, "sink");
-  gst_pad_set_setcaps_function (filter->sinkpad,
-                                GST_DEBUG_FUNCPTR(gst_tapfileenc_sinkpad_set_caps));
   gst_pad_set_chain_function (filter->sinkpad,
-                              GST_DEBUG_FUNCPTR(gst_tapfileenc_chain));
-  gst_pad_set_getcaps_function (filter->sinkpad,
-                                GST_DEBUG_FUNCPTR(gst_tapfileenc_sinkpad_get_caps));
+      GST_DEBUG_FUNCPTR (gst_tapfileenc_chain));
   gst_pad_set_event_function (filter->sinkpad,
       GST_DEBUG_FUNCPTR (gst_tapfileenc_sink_event));
-
+  gst_pad_set_query_function (filter->sinkpad,
+      GST_DEBUG_FUNCPTR (gsttapfileenc_query));
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
 
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
-
-  /* set defaults for properties */
-  for (i = 0;i < nproperties; i++) {
-    GValue default_value = {0,};
-    g_value_init (&default_value, G_PARAM_SPEC_VALUE_TYPE(properties[i]));
-    g_param_value_set_default (properties[i], &default_value);
-    g_object_set_property (G_OBJECT(filter), g_param_spec_get_name (properties[i]), &default_value);
-  }
-  g_free(properties);
-
   filter->sent_header = FALSE;
   filter->length = 0;
 }
@@ -491,6 +481,6 @@ gst_tapfileenc_register (GstPlugin * plugin)
   GST_DEBUG_CATEGORY_INIT (gst_tapfileenc_debug, "tapfileenc",
       0, "Commodore 64 DMP encoder");
 
-  return gst_element_register (plugin, "tapfileenc", GST_RANK_NONE, GST_TYPE_TAPFILEENC);
+  return gst_element_register (plugin, "tapfileenc", GST_RANK_NONE,
+      GST_TYPE_TAPFILEENC);
 }
-
