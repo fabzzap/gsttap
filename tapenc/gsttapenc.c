@@ -96,7 +96,13 @@ struct _GstTapEnc
 
   guchar initial_threshold;
 
+  GstBuffer *pull_buffer;
+
+  uint32_t pull_buffer_consumed;
   struct tap_enc_t *tap;
+  GCond cond;
+  GMutex mutex;
+  gboolean is_eos;
 };
 
 struct _GstTapEncClass
@@ -200,6 +206,17 @@ gst_tapenc_get_property (GObject * object, guint prop_id,
   }
 }
 
+static void
+gst_tapenc_finalize (GObject * object)
+{
+  GstTapEnc *filter = GST_TAPENC (object);
+
+  g_mutex_clear (&filter->mutex);
+  g_cond_clear (&filter->cond);
+
+  G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
 static GstStateChangeReturn
 gst_tapenc_change_state (GstElement * object, GstStateChange transition)
 {
@@ -226,16 +243,23 @@ gst_tapenc_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_EOS:
-      if (filter->tap != NULL) {
-        uint32_t flushed_pulses = tapenc_flush (filter->tap);
-        if (flushed_pulses > 0) {
-          GstByteWriter *writer = gst_byte_writer_new ();
-          GstBuffer *buffer;
-          gst_byte_writer_put_data (writer, (const guint8 *) &flushed_pulses,
-              sizeof (flushed_pulses));
-          buffer = gst_byte_writer_free_and_get_buffer (writer);
-          gst_pad_push (filter->srcpad, buffer);
+      if (GST_PAD_MODE (filter->srcpad) == GST_PAD_MODE_PUSH) {
+        if (filter->tap != NULL) {
+          uint32_t flushed_pulses = tapenc_flush (filter->tap);
+          if (flushed_pulses > 0) {
+            GstByteWriter *writer = gst_byte_writer_new ();
+            GstBuffer *buffer;
+            gst_byte_writer_put_data (writer, (const guint8 *) &flushed_pulses,
+                sizeof (flushed_pulses));
+            buffer = gst_byte_writer_free_and_get_buffer (writer);
+            gst_pad_push (filter->srcpad, buffer);
+          }
         }
+      } else {
+        g_mutex_lock (&filter->mutex);
+        filter->is_eos = TRUE;
+        g_cond_signal (&filter->cond);
+        g_mutex_unlock (&filter->mutex);
       }
       break;
     case GST_EVENT_FLUSH_STOP:
@@ -312,6 +336,7 @@ gst_tapenc_class_init (GstTapEncClass * klass)
       gst_static_pad_template_get (&sink_factory));
   gobject_class->set_property = gst_tapenc_set_property;
   gobject_class->get_property = gst_tapenc_get_property;
+  gobject_class->finalize = gst_tapenc_finalize;
   gstelement_class->change_state = gst_tapenc_change_state;
 
   g_object_class_install_property (gobject_class, PROP_MIN_DURATION,
@@ -362,25 +387,116 @@ gst_tapenc_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
   gst_buffer_map (buf, &map, GST_MAP_READ);
   data = (int32_t *) map.data;
   buflen = map.size / sizeof (int32_t);
-  while (bufsofar < buflen) {
-    uint32_t pulse;
-    bufsofar +=
-        tapenc_get_pulse (filter->tap, data + bufsofar, buflen - bufsofar,
-        &pulse);
-    if (pulse > 0)
-      gst_byte_writer_put_data (writer, (const guint8 *) &pulse,
-          sizeof (pulse));
+
+  if (GST_PAD_MODE (filter->srcpad) == GST_PAD_MODE_PULL) {
+    g_mutex_lock (&filter->mutex);
+
+    while (filter->pull_buffer != NULL)
+      g_cond_wait (&filter->cond, &filter->mutex);
+    filter->pull_buffer = buf;
+    filter->pull_buffer_consumed = 0;
+    gst_buffer_unmap (buf, &map);
+
+    g_cond_signal (&filter->cond);
+    g_mutex_unlock (&filter->mutex);
+  } else {
+    while (bufsofar < buflen) {
+      uint32_t pulse;
+      bufsofar +=
+          tapenc_get_pulse (filter->tap, data + bufsofar, buflen - bufsofar,
+          &pulse);
+      if (pulse > 0)
+        gst_byte_writer_put_data (writer, (const guint8 *) &pulse,
+            sizeof (pulse));
+    }
+
+    size = gst_byte_writer_get_size (writer);
+    if (size > 0) {
+      GstBuffer *newbuf = gst_byte_writer_free_and_get_buffer (writer);
+      ret = gst_pad_push (filter->srcpad, newbuf);
+    } else
+      gst_byte_writer_free (writer);
+    gst_buffer_unmap (buf, &map);
   }
 
-  size = gst_byte_writer_get_size (writer);
-  if (size > 0) {
-    GstBuffer *newbuf = gst_byte_writer_free_and_get_buffer (writer);
-    ret = gst_pad_push (filter->srcpad, newbuf);
-  } else
-    gst_byte_writer_free (writer);
-
-  gst_buffer_unmap (buf, &map);
   return ret;
+}
+
+static GstFlowReturn
+gst_tapenc_get_range (GstPad * pad,
+    GstObject * parent, guint64 offset, guint length, GstBuffer ** buf)
+{
+  GstTapEnc *filter = GST_TAPENC (GST_OBJECT_PARENT (pad));
+  GstByteWriter *writer = gst_byte_writer_new ();
+  GstMapInfo map;
+  int32_t *data = NULL;
+  uint32_t buflen = 0;          // just to silence a warning
+
+  g_mutex_lock (&filter->mutex);
+
+  if (!filter->is_eos) {
+    if (filter->pull_buffer != NULL) {
+      gst_buffer_map (filter->pull_buffer, &map, GST_MAP_READ);
+      data = (int32_t *) map.data;
+      buflen = map.size / sizeof (int32_t);
+    }
+
+    while (gst_byte_writer_get_size (writer) + sizeof (guint32) <= length) {
+      if (filter->pull_buffer == NULL) {
+        do
+          g_cond_wait (&filter->cond, &filter->mutex);
+        while (filter->pull_buffer == NULL && !filter->is_eos);
+        if (!filter->is_eos) {
+          gst_buffer_map (filter->pull_buffer, &map, GST_MAP_READ);
+          data = (int32_t *) map.data;
+          buflen = map.size / sizeof (int32_t);
+        } else {
+          uint32_t flushed_pulses = tapenc_flush (filter->tap);
+          if (flushed_pulses > 0)
+            gst_byte_writer_put_data (writer, (const guint8 *) &flushed_pulses,
+                sizeof (flushed_pulses));
+          break;
+        }
+      }
+
+      if (buflen <= filter->pull_buffer_consumed) {
+        gst_buffer_unref (filter->pull_buffer);
+        filter->pull_buffer = NULL;
+        filter->pull_buffer_consumed = 0;
+
+        g_cond_signal (&filter->cond);
+      } else {
+        uint32_t pulse;
+
+        filter->pull_buffer_consumed +=
+            tapenc_get_pulse (filter->tap, data + filter->pull_buffer_consumed,
+            buflen - filter->pull_buffer_consumed, &pulse);
+        if (pulse > 0)
+          gst_byte_writer_put_data (writer, (const guint8 *) &pulse,
+              sizeof (pulse));
+      }
+    }
+  }
+
+  g_mutex_unlock (&filter->mutex);
+  *buf = gst_byte_writer_free_and_get_buffer (writer);
+  return GST_FLOW_OK;
+}
+
+static gboolean
+gst_tapenc_query (GstPad * pad, GstObject * parent, GstQuery * query)
+{
+  switch (GST_QUERY_TYPE (query)) {
+    case GST_QUERY_SCHEDULING:
+      gst_query_set_scheduling (query, GST_SCHEDULING_FLAG_SEQUENTIAL, 4, -1,
+          4);
+      gst_query_add_scheduling_mode (query, GST_PAD_MODE_PULL);
+      gst_query_add_scheduling_mode (query, GST_PAD_MODE_PUSH);
+
+      return TRUE;
+    default:
+      return gst_pad_query_default (pad, parent, query);
+  }
 }
 
 /* initialize the new element
@@ -398,9 +514,14 @@ gst_tapenc_init (GstTapEnc * filter)
       GST_DEBUG_FUNCPTR (gst_tapenc_sink_event));
 
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
+  gst_pad_set_getrange_function (filter->srcpad, gst_tapenc_get_range);
+  gst_pad_set_query_function (filter->srcpad, gst_tapenc_query);
 
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
+
+  g_mutex_init (&filter->mutex);
+  g_cond_init (&filter->cond);
 }
 
 static gboolean
