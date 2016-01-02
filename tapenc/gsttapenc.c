@@ -124,7 +124,8 @@ enum
   PROP_SENSITIVITY,
   PROP_INVERTED,
   PROP_HALFWAVES,
-  PROP_INITIAL_THRESHOLD
+  PROP_INITIAL_THRESHOLD,
+  PROP_CURRENT_POSITION
 };
 
 /* the capabilities of the inputs and outputs.
@@ -493,6 +494,13 @@ gst_tapenc_query (GstPad * pad, GstObject * parent, GstQuery * query)
       gst_query_add_scheduling_mode (query, GST_PAD_MODE_PULL);
       gst_query_add_scheduling_mode (query, GST_PAD_MODE_PUSH);
 
+      return TRUE;
+    case GST_QUERY_POSITION:
+    {
+      GstTapEnc *filter = GST_TAPENC (parent);
+      gint64 pos = (gint64) tapenc_get_last_trigger (filter->tap);
+      gst_query_set_position (query, GST_FORMAT_BYTES, pos);
+    }
       return TRUE;
     default:
       return gst_pad_query_default (pad, parent, query);
