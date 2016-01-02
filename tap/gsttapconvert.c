@@ -70,6 +70,7 @@ struct _GstTapConvert
     wave_half_to_full,
     wave_full_to_half
   } waves;
+  GstPadGetRangeFunction base_getrange;
 };
 
 struct _GstTapConvertClass
@@ -107,9 +108,10 @@ static GstFlowReturn gst_tapconvert_transform (GstBaseTransform * trans,
     GstBuffer * inbuf, GstBuffer * outbuf);
 static GstCaps *gst_tapconvert_transform_caps (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps, GstCaps * filter);
-static gboolean gst_tapconvert_transform_size (GstBaseTransform * trans,
-    GstPadDirection direction, GstCaps * caps, gsize size, GstCaps * othercaps,
-    gsize * othersize);
+static gboolean gst_tapconvert_get_unit_size (GstBaseTransform * trans,
+    GstCaps * caps, gsize * size);
+static GstFlowReturn gst_tapconvert_getrange (GstPad * pad, GstObject * parent,
+    guint64 offset, guint length, GstBuffer ** buffer);
 /* GObject vmethod implementations */
 
 /* initialize the plugin's class */
@@ -126,8 +128,8 @@ gst_tapconvert_class_init (GstTapConvertClass * klass)
       GST_DEBUG_FUNCPTR (gst_tapconvert_set_caps);
   GST_BASE_TRANSFORM_CLASS (klass)->transform_caps =
       GST_DEBUG_FUNCPTR (gst_tapconvert_transform_caps);
-  GST_BASE_TRANSFORM_CLASS (klass)->transform_size =
-      GST_DEBUG_FUNCPTR (gst_tapconvert_transform_size);
+  GST_BASE_TRANSFORM_CLASS (klass)->get_unit_size =
+      GST_DEBUG_FUNCPTR (gst_tapconvert_get_unit_size);
 
   gst_element_class_set_details_simple (element_class,
       "Commodore 64 TAP rate converter",
@@ -150,6 +152,9 @@ gst_tapconvert_class_init (GstTapConvertClass * klass)
 static void
 gst_tapconvert_init (GstTapConvert * filter)
 {
+  GstBaseTransform *trans = GST_BASE_TRANSFORM (filter);
+  filter->base_getrange = trans->srcpad->getrangefunc;
+  gst_pad_set_getrange_function (trans->srcpad, gst_tapconvert_getrange);
 }
 
 /* GstBaseTransform vmethod implementations */
@@ -260,25 +265,20 @@ gst_tapconvert_set_caps (GstBaseTransform * trans, GstCaps * incaps,
 }
 
 static gboolean
-gst_tapconvert_transform_size (GstBaseTransform * trans,
-    GstPadDirection direction,
-    GstCaps * caps, gsize size, GstCaps * othercaps, gsize * othersize)
+gst_tapconvert_get_unit_size (GstBaseTransform * trans,
+    GstCaps * caps, gsize * size)
 {
   GstStructure *structure = gst_caps_get_structure (caps, 0);
-  GstStructure *other_structure = gst_caps_get_structure (othercaps, 0);
-  gboolean halfwaves, other_halfwaves;
+  gboolean halfwaves;
+  GstTapConvert *filter = GST_TAP_CONVERT (trans);
+
   if (!gst_structure_get_boolean (structure, "halfwaves", &halfwaves))
     return FALSE;
-  if (!gst_structure_get_boolean (other_structure, "halfwaves",
-          &other_halfwaves))
-    return FALSE;
-  if (halfwaves == other_halfwaves)
-    *othersize = size;
-  else if (halfwaves)
-    /* divide by 2 and round the rsult to a multiple of 4 (sizeof (guint32)) */
-    *othersize = (size / sizeof (guint32)) / 2 * sizeof (guint32);
-  else
-    *othersize = size * 2;
+  *size = sizeof (guint32);
+  if (halfwaves && (filter->waves == wave_full_to_half
+          || filter->waves == wave_half_to_full))
+    *size *= 2;
+
   return TRUE;
 }
 
@@ -318,6 +318,69 @@ gst_tapconvert_transform_caps (GstBaseTransform * trans,
   GST_DEBUG_OBJECT (trans, "to: %" GST_PTR_FORMAT, newstructure);
 
   return newcaps;
+}
+
+/* work around the brokenness of gst_base_transform_getrange */
+static GstFlowReturn
+gst_tapconvert_getrange (GstPad * pad, GstObject * parent, guint64 offset,
+    guint length, GstBuffer ** buffer)
+{
+  GstBaseTransformClass *klass = GST_BASE_TRANSFORM_GET_CLASS (parent);
+  GstTapConvert *filter = GST_TAP_CONVERT (parent);
+  GstBaseTransform *trans = GST_BASE_TRANSFORM (parent);
+  GstFlowReturn ret;
+  GstBuffer *inbuf = NULL;
+  GstBuffer *outbuf = NULL;
+  gsize other_length;
+  GstCaps *incaps, *outcaps;
+
+  ret = klass->submit_input_buffer (trans, FALSE, gst_buffer_new ());
+  if (ret != GST_FLOW_OK) {
+    if (ret != GST_FLOW_NOT_NEGOTIATED)
+      goto pull_error;
+  } else {
+    gst_buffer_unref (trans->queued_buf);
+    trans->queued_buf = NULL;
+  }
+
+  if (filter->waves == wave_unchanged)
+    return filter->base_getrange (pad, parent, offset, length, buffer);
+
+  incaps = gst_pad_get_current_caps (trans->sinkpad);
+  outcaps = gst_pad_get_current_caps (pad);
+
+  if (!klass->transform_size (trans, GST_PAD_SRC, outcaps, length, incaps,
+          &other_length)) {
+    ret = GST_FLOW_ERROR;
+    goto pull_error;
+  }
+
+  ret = gst_pad_pull_range (trans->sinkpad, offset, other_length, &inbuf);
+  if (G_UNLIKELY (ret != GST_FLOW_OK))
+    goto pull_error;
+
+  if (klass->before_transform)
+    klass->before_transform (trans, inbuf);
+
+  ret = klass->submit_input_buffer (trans, FALSE, inbuf);
+  if (ret != GST_FLOW_OK) {
+    if (ret == GST_BASE_TRANSFORM_FLOW_DROPPED)
+      ret = GST_FLOW_OK;
+    goto done;
+  }
+  ret = klass->generate_output (trans, &outbuf);
+
+  *buffer = outbuf;
+done:
+  return ret;
+
+  /* ERRORS */
+pull_error:
+  {
+    GST_DEBUG_OBJECT (trans, "failed to pull a buffer: %s",
+        gst_flow_get_name (ret));
+    goto done;
+  }
 }
 
 gboolean
