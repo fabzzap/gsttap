@@ -98,7 +98,11 @@ struct _GstTapEnc
 
   GstBuffer *pull_buffer;
 
-  uint32_t pull_buffer_consumed;
+  GstMapInfo map;
+
+  uint32_t buflen;
+  int32_t *data;
+  uint32_t buffer_consumed;
   struct tap_enc_t *tap;
   GCond cond;
   GMutex mutex;
@@ -377,17 +381,10 @@ static GstFlowReturn
 gst_tapenc_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 {
   GstTapEnc *filter = GST_TAPENC (GST_OBJECT_PARENT (pad));
-  int32_t *data;
-  uint32_t buflen;
-  uint32_t bufsofar = 0;
   GstFlowReturn ret = GST_FLOW_OK;
   GstByteWriter *writer = gst_byte_writer_new ();
   guint size;
-  GstMapInfo map;
 
-  gst_buffer_map (buf, &map, GST_MAP_READ);
-  data = (int32_t *) map.data;
-  buflen = map.size / sizeof (int32_t);
 
   if (GST_PAD_MODE (filter->srcpad) == GST_PAD_MODE_PULL) {
     g_mutex_lock (&filter->mutex);
@@ -395,17 +392,23 @@ gst_tapenc_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
     while (filter->pull_buffer != NULL)
       g_cond_wait (&filter->cond, &filter->mutex);
     filter->pull_buffer = buf;
-    filter->pull_buffer_consumed = 0;
-    gst_buffer_unmap (buf, &map);
+    gst_buffer_map (buf, &filter->map, GST_MAP_READ);
+    filter->data = (int32_t *) filter->map.data;
+    filter->buflen = filter->map.size / sizeof (int32_t);
+    filter->buffer_consumed = 0;
 
     g_cond_signal (&filter->cond);
     g_mutex_unlock (&filter->mutex);
   } else {
-    while (bufsofar < buflen) {
+    gst_buffer_map (buf, &filter->map, GST_MAP_READ);
+    filter->data = (int32_t *) filter->map.data;
+    filter->buflen = filter->map.size / sizeof (int32_t);
+    filter->buffer_consumed = 0;
+    while (filter->buffer_consumed < filter->buflen) {
       uint32_t pulse;
-      bufsofar +=
-          tapenc_get_pulse (filter->tap, data + bufsofar, buflen - bufsofar,
-          &pulse);
+      filter->buffer_consumed +=
+          tapenc_get_pulse (filter->tap, filter->data + filter->buffer_consumed,
+          filter->buflen - filter->buffer_consumed, &pulse);
       if (pulse > 0)
         gst_byte_writer_put_data (writer, (const guint8 *) &pulse,
             sizeof (pulse));
@@ -417,7 +420,7 @@ gst_tapenc_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
       ret = gst_pad_push (filter->srcpad, newbuf);
     } else
       gst_byte_writer_free (writer);
-    gst_buffer_unmap (buf, &map);
+    gst_buffer_unmap (buf, &filter->map);
   }
 
   return ret;
@@ -429,55 +432,44 @@ gst_tapenc_get_range (GstPad * pad,
 {
   GstTapEnc *filter = GST_TAPENC (GST_OBJECT_PARENT (pad));
   GstByteWriter *writer = gst_byte_writer_new ();
-  GstMapInfo map;
-  int32_t *data = NULL;
-  uint32_t buflen = 0;          // just to silence a warning
 
   g_mutex_lock (&filter->mutex);
 
-  if (!filter->is_eos) {
-    if (filter->pull_buffer != NULL) {
-      gst_buffer_map (filter->pull_buffer, &map, GST_MAP_READ);
-      data = (int32_t *) map.data;
-      buflen = map.size / sizeof (int32_t);
-    }
 
-    while (gst_byte_writer_get_size (writer) + sizeof (guint32) <= length) {
-      if (filter->pull_buffer == NULL) {
-        do
-          g_cond_wait (&filter->cond, &filter->mutex);
-        while (filter->pull_buffer == NULL && !filter->is_eos);
-        if (!filter->is_eos) {
-          gst_buffer_map (filter->pull_buffer, &map, GST_MAP_READ);
-          data = (int32_t *) map.data;
-          buflen = map.size / sizeof (int32_t);
-        } else {
-          uint32_t flushed_pulses = tapenc_flush (filter->tap);
-          if (flushed_pulses > 0)
-            gst_byte_writer_put_data (writer, (const guint8 *) &flushed_pulses,
-                sizeof (flushed_pulses));
-          break;
-        }
-      }
+  do {
+    uint32_t pulse;
 
-      if (buflen <= filter->pull_buffer_consumed) {
-        gst_buffer_unref (filter->pull_buffer);
-        filter->pull_buffer = NULL;
-        filter->pull_buffer_consumed = 0;
-
-        g_cond_signal (&filter->cond);
-      } else {
-        uint32_t pulse;
-
-        filter->pull_buffer_consumed +=
-            tapenc_get_pulse (filter->tap, data + filter->pull_buffer_consumed,
-            buflen - filter->pull_buffer_consumed, &pulse);
+    while (filter->pull_buffer == NULL && !filter->is_eos)
+      g_cond_wait (&filter->cond, &filter->mutex);
+    if (filter->pull_buffer == NULL) {
+      if (gst_byte_writer_get_size (writer) < length) {
+        pulse = tapenc_flush (filter->tap);
         if (pulse > 0)
           gst_byte_writer_put_data (writer, (const guint8 *) &pulse,
               sizeof (pulse));
       }
+      break;
     }
-  }
+
+    if (filter->buflen <= filter->buffer_consumed) {
+      gst_buffer_unmap (filter->pull_buffer, &filter->map);
+      gst_buffer_unref (filter->pull_buffer);
+      filter->pull_buffer = NULL;
+      filter->buffer_consumed = 0;
+
+      g_cond_signal (&filter->cond);
+      continue;
+    }
+    if (gst_byte_writer_get_size (writer) >= length)
+      break;
+
+    filter->buffer_consumed +=
+        tapenc_get_pulse (filter->tap, filter->data + filter->buffer_consumed,
+        filter->buflen - filter->buffer_consumed, &pulse);
+    if (pulse > 0)
+      gst_byte_writer_put_data (writer, (const guint8 *) &pulse,
+          sizeof (pulse));
+  } while (1);
 
   g_mutex_unlock (&filter->mutex);
   *buf = gst_byte_writer_free_and_get_buffer (writer);
