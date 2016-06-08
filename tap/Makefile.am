@@ -8,6 +8,7 @@ gstdmpdec.c gstdmpdec.h \
 gsttapfileenc.c gsttapfileenc.h \
 gsttapfiledec.c gsttapfiledec.h \
 gsttapconvert.c gsttapconvert.h \
+gstbasetapcontainerdec.c gstbasetapcontainerdec.h \
 plugin.c
 
 # compiler and linker flags used to compile this plugin, set in configure.ac

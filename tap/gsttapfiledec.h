@@ -1,7 +1,5 @@
 /*
  * GStreamer
- * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
- * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2011 Fabrizio Gennari <fabrizio.ge@tiscali.it>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -46,7 +44,7 @@
 #ifndef __GST_TAPFILEDEC_H__
 #define __GST_TAPFILEDEC_H__
 
-#include <gst/gst.h>
+#include "gstbasetapcontainerdec.h"
 
 G_BEGIN_DECLS
 
