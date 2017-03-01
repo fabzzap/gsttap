@@ -108,7 +108,7 @@ plugin_init (GstPlugin * plugin)
 GST_PLUGIN_DEFINE (
     GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
-    "tap",
+    tap,
     "Commodore tape file formats and frequency conversion support",
     plugin_init,
     VERSION,

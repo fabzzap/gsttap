@@ -403,7 +403,7 @@ gst_tapdec_register (GstPlugin * plugin)
 GST_PLUGIN_DEFINE (
     GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
-    "tapdec",
+    tapdec,
     "Commodore tape decoder support",
     gst_tapdec_register,
     VERSION,

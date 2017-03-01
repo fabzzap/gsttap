@@ -538,7 +538,7 @@ gst_tapenc_register (GstPlugin * plugin)
 GST_PLUGIN_DEFINE (
     GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
-    "tapenc",
+    tapenc,
     "Commodore tape encoder support",
     gst_tapenc_register,
     VERSION,
