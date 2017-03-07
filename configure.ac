@@ -66,8 +66,12 @@ AC_ARG_WITH(libtap-libs, [Where the libtap library is located])
 translit(dnm, m, l) AM_CONDITIONAL(USE_TAPENC, true)
 AG_GST_CHECK_FEATURE(TAPENC, [TAP audio encoder], tapenc, [
     TAPENC_LIBS=-ltapencoder
-    TAPENC_CPPFLAGS="-I$with_libtap_includes"
-    TAPENC_LDFLAGS="-L$with_libtap_libs"
+    if test x$with_libtap_includes != x ; then
+      TAPENC_CPPFLAGS="-I$with_libtap_includes"
+    fi
+    if test x$with_libtap_libs != x; then
+      TAPENC_LDFLAGS="-L$with_libtap_libs"
+    fi
     CPPFLAGS="$CPPFLAGS $TAPENC_CPPFLAGS"
     LDFLAGS="$LDFLAGS $TAPENC_LDFLAGS"
     AC_CHECK_HEADER(tapencoder.h,
