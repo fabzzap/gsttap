@@ -137,6 +137,9 @@ gst_basetapcontainerdec_class_init (GstBaseTapContainerDecClass * klass)
 
   element_class->change_state = gst_basetapcontainerdec_change_state;
   object_class->finalize = gst_basetapcontainerdec_finalize;
+
+  GST_DEBUG_CATEGORY_INIT (gst_basetapcontainerdec_debug, "basetapcontainerdec", 0,
+      "Base class to open file containers for tapes");
 }
 
 static const guint8 *
