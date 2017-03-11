@@ -294,34 +294,42 @@ static GstCaps *
 gst_tapconvert_transform_caps (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps, GstCaps * filter)
 {
-  GstPad *otherpad = direction == GST_PAD_SRC ? trans->sinkpad : trans->srcpad;
-  GstCaps *newcaps = gst_caps_copy (caps);
-  GstStructure *newstructure = gst_caps_get_structure (newcaps, 0);
-  gboolean rate_changed = FALSE, halfwaves_changed = FALSE;
-  GstCaps *othercaps = gst_pad_peer_query_caps (otherpad, NULL);
-
   GST_DEBUG_OBJECT (trans, "direction %s from: %" GST_PTR_FORMAT,
       direction == GST_PAD_SRC ? "src" : "sink", caps);
+  GstStaticCaps static_caps = GST_STATIC_CAPS ("audio/x-tap");
+  GstCaps *newcaps = gst_static_caps_get (&static_caps);
+  if (direction == GST_PAD_SINK) {
+    GstStructure *newstructure = gst_caps_get_structure (newcaps, 0);
+    GstCaps *othercaps = gst_pad_peer_query_caps (trans->srcpad, NULL);
 
-  if (othercaps && gst_caps_get_size (othercaps) > 0) {
-    GstStructure *structure = gst_caps_get_structure (othercaps, 0);
-    const GValue *rate = gst_structure_get_value (structure, "rate");
-    const GValue *halfwaves = gst_structure_get_value (structure, "halfwaves");
-
-    if (G_VALUE_HOLDS (rate, G_TYPE_INT)) {
-      rate_changed = TRUE;
-      gst_structure_set_value (newstructure, "rate", rate);
-    }
-    if (G_VALUE_HOLDS (halfwaves, G_TYPE_BOOLEAN)) {
-      halfwaves_changed = TRUE;
-      gst_structure_set_value (newstructure, "halfwaves", halfwaves);
+    if (othercaps && gst_caps_get_size (othercaps) > 0) {
+      GstStructure *structure = gst_caps_get_structure (othercaps, 0);
+      const GValue *rate = gst_structure_get_value (structure, "rate");
+      const GValue *halfwaves = gst_structure_get_value (structure, "halfwaves");
+      gboolean has_rate = G_VALUE_HOLDS (rate, G_TYPE_INT);
+      gboolean has_halfwaves = G_VALUE_HOLDS (halfwaves, G_TYPE_BOOLEAN);
+      if (has_rate || has_halfwaves) {
+        GstStructure *src_structure;
+        gst_caps_make_writable(newcaps);
+        if (!has_rate || !has_halfwaves)
+          src_structure = gst_caps_get_structure (caps, 0);
+        if (has_rate)
+          gst_structure_set_value (newstructure, "rate", rate);
+        else {
+          const GValue *src_rate = gst_structure_get_value (src_structure, "rate");
+          if (G_VALUE_HOLDS (src_rate, G_TYPE_INT))
+            gst_structure_set_value (newstructure, "rate", src_rate);
+        }
+        if (has_halfwaves)
+          gst_structure_set_value (newstructure, "halfwaves", halfwaves);
+        else {
+          const GValue *src_halfwaves = gst_structure_get_value (src_structure, "halfwaves");
+          if (G_VALUE_HOLDS (src_halfwaves, G_TYPE_BOOLEAN))
+            gst_structure_set_value (newstructure, "halfwaves", src_halfwaves);
+        }
+      }
     }
   }
-
-  if (!rate_changed)
-    gst_structure_remove_field (newstructure, "rate");
-  if (!halfwaves_changed)
-    gst_structure_remove_field (newstructure, "halfwaves");
 
   GST_DEBUG_OBJECT (trans, "to: %" GST_PTR_FORMAT, newcaps);
 
