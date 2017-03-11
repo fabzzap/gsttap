@@ -239,12 +239,20 @@ gst_tapconvert_set_caps (GstBaseTransform * trans, GstCaps * incaps,
   GstStructure *outstructure = gst_caps_get_structure (outcaps, 0);
   gboolean inhalfwaves, outhalfwaves;
   gboolean ret1 = gst_structure_get_int (instructure, "rate", &filter->inrate);
+  if (!ret1)
+    GST_WARNING_OBJECT (filter, "input caps have no rate");
   gboolean ret2 =
       gst_structure_get_int (outstructure, "rate", &filter->outrate);
+  if (!ret2)
+    GST_WARNING_OBJECT (filter, "output caps have no rate");
   gboolean ret3 =
       gst_structure_get_boolean (instructure, "halfwaves", &inhalfwaves);
+  if (!ret3)
+    GST_WARNING_OBJECT (filter, "input caps have no indication about halfwaves");
   gboolean ret4 =
       gst_structure_get_boolean (outstructure, "halfwaves", &outhalfwaves);
+  if (!ret4)
+    GST_WARNING_OBJECT (filter, "output caps have no rate");
   gboolean ret = ret1 && ret2 && ret3 && ret4;
 
   GST_DEBUG_OBJECT (trans, "from: %" GST_PTR_FORMAT, instructure);
