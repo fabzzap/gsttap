@@ -301,7 +301,7 @@ gst_tapconvert_transform_caps (GstBaseTransform * trans,
   GstCaps *othercaps = gst_pad_peer_query_caps (otherpad, NULL);
 
   GST_DEBUG_OBJECT (trans, "direction %s from: %" GST_PTR_FORMAT,
-      direction == GST_PAD_SRC ? "src" : "sink", newstructure);
+      direction == GST_PAD_SRC ? "src" : "sink", caps);
 
   if (othercaps && gst_caps_get_size (othercaps) > 0) {
     GstStructure *structure = gst_caps_get_structure (othercaps, 0);
@@ -323,7 +323,7 @@ gst_tapconvert_transform_caps (GstBaseTransform * trans,
   if (!halfwaves_changed)
     gst_structure_remove_field (newstructure, "halfwaves");
 
-  GST_DEBUG_OBJECT (trans, "to: %" GST_PTR_FORMAT, newstructure);
+  GST_DEBUG_OBJECT (trans, "to: %" GST_PTR_FORMAT, newcaps);
 
   return newcaps;
 }
