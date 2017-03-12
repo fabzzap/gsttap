@@ -304,29 +304,19 @@ gst_tapconvert_transform_caps (GstBaseTransform * trans,
 
     if (othercaps && gst_caps_get_size (othercaps) > 0) {
       GstStructure *structure = gst_caps_get_structure (othercaps, 0);
+      GstStructure *src_structure = gst_caps_get_structure (caps, 0);
       const GValue *rate = gst_structure_get_value (structure, "rate");
       const GValue *halfwaves = gst_structure_get_value (structure, "halfwaves");
+      const GValue *src_rate = gst_structure_get_value (src_structure, "rate");
+      const GValue *src_halfwaves = gst_structure_get_value (src_structure, "halfwaves");
       gboolean has_rate = G_VALUE_HOLDS (rate, G_TYPE_INT);
       gboolean has_halfwaves = G_VALUE_HOLDS (halfwaves, G_TYPE_BOOLEAN);
-      if (has_rate || has_halfwaves) {
-        GstStructure *src_structure;
+      gboolean src_has_rate = G_VALUE_HOLDS (src_rate, G_TYPE_INT);
+      gboolean src_has_halfwaves = G_VALUE_HOLDS (src_halfwaves, G_TYPE_BOOLEAN);
+      if (src_has_rate && src_has_halfwaves && (has_rate || has_halfwaves)) {
         gst_caps_make_writable(newcaps);
-        if (!has_rate || !has_halfwaves)
-          src_structure = gst_caps_get_structure (caps, 0);
-        if (has_rate)
-          gst_structure_set_value (newstructure, "rate", rate);
-        else {
-          const GValue *src_rate = gst_structure_get_value (src_structure, "rate");
-          if (G_VALUE_HOLDS (src_rate, G_TYPE_INT))
-            gst_structure_set_value (newstructure, "rate", src_rate);
-        }
-        if (has_halfwaves)
-          gst_structure_set_value (newstructure, "halfwaves", halfwaves);
-        else {
-          const GValue *src_halfwaves = gst_structure_get_value (src_structure, "halfwaves");
-          if (G_VALUE_HOLDS (src_halfwaves, G_TYPE_BOOLEAN))
-            gst_structure_set_value (newstructure, "halfwaves", src_halfwaves);
-        }
+        gst_structure_set_value (newstructure, "rate", has_rate ? rate : src_rate);
+        gst_structure_set_value (newstructure, "halfwaves", has_halfwaves ? halfwaves : src_halfwaves);
       }
     }
   }
