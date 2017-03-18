@@ -85,13 +85,13 @@ struct _GstTapConvertClass
 static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("audio/x-tap")
+    GST_STATIC_CAPS ("audio/x-tap, rate=(int)[1,2000000], halfwaves=(boolean){false,true}")
     );
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("audio/x-tap")
+    GST_STATIC_CAPS ("audio/x-tap, rate=(int)[1,2000000], halfwaves=(boolean){false,true}")
     );
 
 /* debug category for fltering log messages
@@ -296,34 +296,7 @@ gst_tapconvert_transform_caps (GstBaseTransform * trans,
 {
   GST_DEBUG_OBJECT (trans, "direction %s from: %" GST_PTR_FORMAT,
       direction == GST_PAD_SRC ? "src" : "sink", caps);
-  GstStaticCaps static_caps = GST_STATIC_CAPS ("audio/x-tap");
-  GstCaps *newcaps = gst_static_caps_get (&static_caps);
-  if (direction == GST_PAD_SINK) {
-    GstStructure *newstructure = gst_caps_get_structure (newcaps, 0);
-    GstCaps *othercaps = gst_pad_peer_query_caps (trans->srcpad, NULL);
-
-    if (othercaps && gst_caps_get_size (othercaps) > 0) {
-      GstStructure *structure = gst_caps_get_structure (othercaps, 0);
-      GstStructure *src_structure = gst_caps_get_structure (caps, 0);
-      const GValue *rate = gst_structure_get_value (structure, "rate");
-      const GValue *halfwaves = gst_structure_get_value (structure, "halfwaves");
-      const GValue *src_rate = gst_structure_get_value (src_structure, "rate");
-      const GValue *src_halfwaves = gst_structure_get_value (src_structure, "halfwaves");
-      gboolean has_rate = G_VALUE_HOLDS (rate, G_TYPE_INT);
-      gboolean has_halfwaves = G_VALUE_HOLDS (halfwaves, G_TYPE_BOOLEAN);
-      gboolean src_has_rate = G_VALUE_HOLDS (src_rate, G_TYPE_INT);
-      gboolean src_has_halfwaves = G_VALUE_HOLDS (src_halfwaves, G_TYPE_BOOLEAN);
-      if (src_has_rate && src_has_halfwaves && (has_rate || has_halfwaves)) {
-        gst_caps_make_writable(newcaps);
-        gst_structure_set_value (newstructure, "rate", has_rate ? rate : src_rate);
-        gst_structure_set_value (newstructure, "halfwaves", has_halfwaves ? halfwaves : src_halfwaves);
-      }
-    }
-  }
-
-  GST_DEBUG_OBJECT (trans, "to: %" GST_PTR_FORMAT, newcaps);
-
-  return newcaps;
+  return gst_pad_get_pad_template_caps (direction == GST_PAD_SRC ? trans->sinkpad : trans->srcpad);
 }
 
 /* work around the brokenness of gst_base_transform_getrange */
