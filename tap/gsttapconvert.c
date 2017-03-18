@@ -1,6 +1,5 @@
 /*
  * GStreamer
- * Copyright (C) 2006 Stefan Kost <ensonic@users.sf.net>
  * Copyright (C) 2011 Fabrizio Gennari <fabrizio.ge@tiscali.it>
  *
  * This library is free software; you can redistribute it and/or
