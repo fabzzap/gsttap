@@ -175,6 +175,8 @@ gst_tapenc_set_property (GObject * object, guint prop_id,
       break;
     case PROP_HALFWAVES:
       filter->halfwaves = g_value_get_boolean (value);
+      if (filter->tap)
+        tapenc_toggle_trigger_on_both_edges (filter->tap, filter->halfwaves);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -203,7 +205,6 @@ gst_tapenc_get_property (GObject * object, guint prop_id,
       break;
     case PROP_HALFWAVES:
       g_value_set_boolean (value, filter->halfwaves);
-      tapenc_toggle_trigger_on_both_edges (filter->tap, filter->halfwaves);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
