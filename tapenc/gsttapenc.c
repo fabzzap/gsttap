@@ -114,13 +114,6 @@ struct _GstTapEncClass
   GstElementClass parent_class;
 };
 
-/* Filter signals and args */
-enum
-{
-  /* FILL ME */
-  LAST_SIGNAL
-};
-
 enum
 {
   PROP_0,
@@ -128,8 +121,7 @@ enum
   PROP_SENSITIVITY,
   PROP_INVERTED,
   PROP_HALFWAVES,
-  PROP_INITIAL_THRESHOLD,
-  PROP_CURRENT_POSITION
+  PROP_INITIAL_THRESHOLD
 };
 
 /* the capabilities of the inputs and outputs.
