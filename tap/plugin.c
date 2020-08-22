@@ -58,41 +58,9 @@
 #include "gsttapfiledec.h"
 #include "gsttapconvert.h"
 
-static void
-tap_type_find (GstTypeFind * tf, gpointer caps_pointer)
-{
-  GstCaps *tap_caps = (GstCaps *) caps_pointer;
-  const guint8 *data = gst_type_find_peek (tf, 0, 12);
-  if (data) {
-    if (memcmp (data, "C64-TAPE-RAW", 12) == 0
-        || memcmp (data, "C16-TAPE-RAW", 12) == 0) {
-      gst_type_find_suggest (tf, GST_TYPE_FIND_MAXIMUM, tap_caps);
-    }
-  }
-}
-
-static void
-dmp_type_find (GstTypeFind * tf, gpointer caps_pointer)
-{
-  GstCaps *dmp_caps = (GstCaps *) caps_pointer;
-  const guint8 *data = gst_type_find_peek (tf, 0, 12);
-  if (data && memcmp (data, "DC2N-TAP-RAW", 12) == 0) {
-    gst_type_find_suggest (tf, GST_TYPE_FIND_LIKELY, dmp_caps);
-  }
-}
-
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-  GstCaps *tap_caps = gst_caps_new_empty_simple ("audio/x-tap-tap");
-  GstCaps *dmp_caps = gst_caps_new_empty_simple ("audio/x-tap-dmp");
-  if (!gst_type_find_register (plugin, "audio/x-tap-tap", GST_RANK_PRIMARY,
-          tap_type_find, "tap", tap_caps, tap_caps, NULL))
-    return FALSE;
-  if (!gst_type_find_register (plugin, "audio/x-tap-dmp", GST_RANK_SECONDARY,
-          dmp_type_find, "dmp", dmp_caps, dmp_caps, NULL)) {
-    return FALSE;
-  }
   return
     gst_dmpdec_register (plugin)
  && gst_tapfileenc_register (plugin)
