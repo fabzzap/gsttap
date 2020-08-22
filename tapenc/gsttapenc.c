@@ -492,6 +492,40 @@ gst_tapenc_query (GstPad * pad, GstObject * parent, GstQuery * query)
   }
 }
 
+static gboolean
+gst_tapenc_src_activate_mode (GstPad * pad, GstObject * parent,
+    GstPadMode mode, gboolean active)
+{
+  gboolean result = TRUE;
+
+  GstTapEnc *trans = GST_TAPENC (parent);
+
+  if (mode == GST_PAD_MODE_PULL) {
+    GstQuery *query;
+    gboolean pull_mode;
+
+    /* first check what upstream scheduling is supported */
+    query = gst_query_new_scheduling ();
+
+    if (!gst_pad_peer_query (trans->sinkpad, query)) {
+      gst_query_unref (query);
+      result =
+        gst_pad_activate_mode (trans->sinkpad, GST_PAD_MODE_PUSH, active);
+    } else {
+      /* see if pull-mode is supported */
+      pull_mode = gst_query_has_scheduling_mode (query,
+        GST_PAD_MODE_PULL);
+      gst_query_unref (query);
+
+      if (pull_mode)
+        result =
+          gst_pad_activate_mode (trans->sinkpad, GST_PAD_MODE_PULL, active);
+    }
+  }
+
+  return result;
+}
+
 /* initialize the new element
  * instantiate pads and add them to element
  * set pad calback functions
@@ -509,6 +543,7 @@ gst_tapenc_init (GstTapEnc * filter)
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
   gst_pad_set_getrange_function (filter->srcpad, gst_tapenc_get_range);
   gst_pad_set_query_function (filter->srcpad, gst_tapenc_query);
+  gst_pad_set_activatemode_function (filter->srcpad, gst_tapenc_src_activate_mode);
 
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
