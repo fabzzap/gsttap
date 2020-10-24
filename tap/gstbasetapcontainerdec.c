@@ -181,6 +181,21 @@ read_from_peer (GstBaseTapContainerDec * filter, guint numbytes)
   return ret;
 }
 
+static void
+send_caps_event_downstream (GstBaseTapContainerDec * filter, gboolean halfwaves) {
+  GstCaps *srccaps = gst_pad_query_caps (filter->srcpad, NULL);
+  GstEvent *new_caps_event;
+
+  srccaps = gst_caps_make_writable (srccaps);
+
+  gst_caps_set_simple (srccaps,
+        "rate", G_TYPE_INT, filter->rate,
+        "halfwaves", G_TYPE_BOOLEAN, halfwaves, NULL);
+
+  new_caps_event = gst_event_new_caps (srccaps);
+  gst_pad_push_event (filter->srcpad, new_caps_event);
+}
+
 static gboolean
 read_header (GstBaseTapContainerDec * filter,
     GstBaseTapContainerReadData read_data)
@@ -188,8 +203,6 @@ read_header (GstBaseTapContainerDec * filter,
   gsize header_size;
   gboolean halfwaves;
   const guint8 *header_data;
-  GstCaps *srccaps;
-  GstEvent *new_caps_event;
   GstEvent *new_segment_event;
   GstSegment new_segment;
   GstTagList *taglist;
@@ -204,15 +217,13 @@ read_header (GstBaseTapContainerDec * filter,
 
   filter->header_status = bclass->read_header (filter, header_data, &halfwaves);
   if (filter->header_status == GST_BASE_TAP_CONVERT_VALID_HEADER) {
-    srccaps = gst_pad_query_caps (filter->srcpad, NULL);
-    srccaps = gst_caps_make_writable (srccaps);
-
-    gst_caps_set_simple (srccaps,
-        "rate", G_TYPE_INT, filter->rate,
-        "halfwaves", G_TYPE_BOOLEAN, halfwaves, NULL);
-
-    new_caps_event = gst_event_new_caps (srccaps);
-    gst_pad_push_event (filter->srcpad, new_caps_event);
+    send_caps_event_downstream (filter, halfwaves);
+    if (GST_PAD_MODE(filter->srcpad) == GST_PAD_MODE_PULL) {
+      // if the upstream element has activated this emelent's source pad in pull mode,
+      // the upstream element might have missed the caps event from this element,
+      // so resend it
+      send_caps_event_downstream (filter, halfwaves);
+    }
     gst_segment_init (&new_segment, GST_FORMAT_TIME);
     new_segment_event = gst_event_new_segment (&new_segment);
     gst_pad_push_event (filter->srcpad, new_segment_event);
@@ -322,7 +333,6 @@ gst_basetapcontainerdec_event (GstPad * pad, GstObject * parent,
   GST_LOG ("handling %s event", GST_EVENT_TYPE_NAME (event));
 
   switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_CAPS:
     case GST_EVENT_SEGMENT:
       GST_DEBUG ("eating event");
       gst_event_unref (event);
@@ -333,12 +343,116 @@ gst_basetapcontainerdec_event (GstPad * pad, GstObject * parent,
   }
 }
 
+#define BASETAPCONTAINERDEC_PULL_SIZE 256
+
+static void
+gst_basetapcontainerdec_loop (GstPad * pad)
+{
+  GstFlowReturn ret = GST_FLOW_ERROR;
+  GstBaseTapContainerDec *filter = GST_BASETAPCONTAINERDEC (GST_PAD_PARENT (pad));
+  GstBuffer *buf;
+
+  GST_LOG_OBJECT (filter, "process data");
+
+  switch (filter->header_status) {
+    case GST_BASE_TAP_CONVERT_NO_HEADER_YET:
+      GST_DEBUG_OBJECT (filter, "no header yet");
+      if (read_header (filter, read_from_peer))
+        ret = GST_FLOW_OK;
+      break;
+
+    case GST_BASE_TAP_CONVERT_VALID_HEADER:
+      GST_DEBUG_OBJECT (filter, "getting data");
+      ret = gst_basetapcontainerdec_get_range (pad, GST_OBJECT(filter), 0, BASETAPCONTAINERDEC_PULL_SIZE, &buf);
+      if (ret == GST_FLOW_OK) {
+        ret = gst_basetapcontainerdec_chain (pad, GST_OBJECT(filter), buf);
+      }
+      break;
+    default:
+      break;
+  }
+  if (ret == GST_FLOW_OK)
+    return;
+
+  {
+    const gchar *reason = gst_flow_get_name (ret);
+
+    GST_DEBUG_OBJECT (filter, "pausing task, reason %s", reason);
+    gst_pad_pause_task (pad);
+
+    if (ret == GST_FLOW_EOS) {
+      gst_pad_push_event (filter->srcpad, gst_event_new_eos ());
+    } else if (ret == GST_FLOW_NOT_LINKED || ret < GST_FLOW_EOS) {
+      /* for fatal errors we post an error message, post the error
+       * first so the app knows about the error first. */
+      GST_ELEMENT_FLOW_ERROR (filter, ret);
+      gst_pad_push_event (filter->srcpad, gst_event_new_eos ());
+    }
+    return;
+  }
+}
+
 static gboolean
 gst_basetapcontainerdec_activate_mode (GstPad * pad, GstObject * parent,
     GstPadMode mode, gboolean active)
 {
   GstBaseTapContainerDec *filter = GST_BASETAPCONTAINERDEC (parent);
-  return gst_pad_activate_mode (filter->sinkpad, mode, active);
+  if (mode == GST_PAD_MODE_PULL) {
+    gst_pad_pause_task (filter->sinkpad);
+    return gst_pad_activate_mode (filter->sinkpad, mode, active);
+  }
+  return TRUE;
+}
+
+static gboolean
+gst_basetapcontainerdec_sink_activate (GstPad * sinkpad, GstObject * parent)
+{
+  GstQuery *query;
+  gboolean pull_mode = FALSE;
+
+  query = gst_query_new_scheduling ();
+
+  if (gst_pad_peer_query (sinkpad, query)) {
+    pull_mode = gst_query_has_scheduling_mode_with_flags (query,
+      GST_PAD_MODE_PULL, GST_SCHEDULING_FLAG_SEEKABLE);
+  }
+
+  gst_query_unref (query);
+
+  if (!pull_mode) {
+    GST_DEBUG_OBJECT (sinkpad, "activating push");
+    return gst_pad_activate_mode (sinkpad, GST_PAD_MODE_PUSH, TRUE);
+  }
+
+  GST_DEBUG_OBJECT (sinkpad, "activating pull");
+  return gst_pad_activate_mode (sinkpad, GST_PAD_MODE_PULL, TRUE);
+}
+
+static gboolean
+gst_basetapcontainerdec_sink_activate_mode (GstPad * sinkpad, GstObject * parent,
+    GstPadMode mode, gboolean active)
+{
+  gboolean res;
+
+  switch (mode) {
+    case GST_PAD_MODE_PUSH:
+      res = TRUE;
+      break;
+    case GST_PAD_MODE_PULL:
+      //res = TRUE;
+      if (active) {
+        /* if we have a scheduler we can start the task */
+        res = gst_pad_start_task (sinkpad, (GstTaskFunction) gst_basetapcontainerdec_loop,
+            sinkpad, NULL);
+      } else {
+        res = gst_pad_stop_task (sinkpad);
+      }
+      break;
+    default:
+      res = FALSE;
+      break;
+  }
+  return res;
 }
 
 /* initialize the new element
@@ -361,6 +475,10 @@ gst_basetapcontainerdec_init (GstBaseTapContainerDec * filter)
   GST_PAD_SET_PROXY_SCHEDULING (filter->srcpad);
   gst_pad_set_activatemode_function (filter->srcpad,
       gst_basetapcontainerdec_activate_mode);
+  gst_pad_set_activatemode_function (filter->sinkpad,
+      gst_basetapcontainerdec_sink_activate_mode);
+  gst_pad_set_activate_function (filter->sinkpad,
+      gst_basetapcontainerdec_sink_activate);
 
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
