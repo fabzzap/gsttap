@@ -86,6 +86,7 @@ struct _GstBaseTapContainerDec
   guint in_offset;
   GstClockTime timestamp;
   guint rate;
+  gboolean halfwaves;
 
   // push mode
   GstAdapter *adapter;
@@ -107,9 +108,10 @@ struct _GstBaseTapContainerDecClass
   gsize (*get_header_size) (GstBaseTapContainerDec *filter);
   const gchar* (*get_container_format) (GstBaseTapContainerDec *filter);
   
-  GstBaseTapContainerHeaderStatus (*read_header) (GstBaseTapContainerDec *filter, const guint8 *header_data, gboolean *halfwaves);
+  GstBaseTapContainerHeaderStatus (*read_header) (GstBaseTapContainerDec *filter, const guint8 *header_data);
   
   gboolean (*read_pulse) (GstBaseTapContainerDec *filter, GstBaseTapContainerReadData read_data, guint *pulse);
 };
+
 G_END_DECLS
 #endif /* __GST_BASETAPCONTAINERDEC_H__ */

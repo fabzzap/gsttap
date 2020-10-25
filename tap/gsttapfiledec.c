@@ -109,7 +109,7 @@ G_DEFINE_TYPE (GstTapFileDec, gst_tapfiledec, GST_TYPE_BASETAPCONTAINERDEC);
 static gsize gst_tapfiledec_get_header_size (GstBaseTapContainerDec * filter);
 static GstBaseTapContainerHeaderStatus
 gst_tapfiledec_read_header (GstBaseTapContainerDec * filter,
-    const guint8 * header_data, gboolean * halfwaves);
+    const guint8 * header_data);
 static const gchar *gst_tapfiledec_get_container_format (GstBaseTapContainerDec
     * filter);
 static gboolean gst_tapfiledec_read_pulse (GstBaseTapContainerDec * filter,
@@ -143,7 +143,7 @@ gst_tapfiledec_get_header_size (GstBaseTapContainerDec * filter)
 
 static GstBaseTapContainerHeaderStatus
 gst_tapfiledec_read_header (GstBaseTapContainerDec * filter,
-    const guint8 * header_data, gboolean * halfwaves)
+    const guint8 * header_data)
 {
   const char expected_signature1[] = "C64-TAPE-RAW";
   const char expected_signature2[] = "C16-TAPE-RAW";
@@ -171,7 +171,7 @@ gst_tapfiledec_read_header (GstBaseTapContainerDec * filter,
       )
     return GST_BASE_TAP_CONVERT_NO_VALID_HEADER;
   filter->rate = tap_clocks[machine][video_standard];
-  *halfwaves = decoder->version == 2;
+  filter->halfwaves = decoder->version == 2;
 
   return GST_BASE_TAP_CONVERT_VALID_HEADER;
 }

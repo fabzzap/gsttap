@@ -181,19 +181,16 @@ read_from_peer (GstBaseTapContainerDec * filter, guint numbytes)
   return ret;
 }
 
-static void
-send_caps_event_downstream (GstBaseTapContainerDec * filter, gboolean halfwaves) {
-  GstCaps *srccaps = gst_pad_query_caps (filter->srcpad, NULL);
-  GstEvent *new_caps_event;
+static GstCaps *
+get_src_caps (GstBaseTapContainerDec * filter) {
+  GstCaps *srccaps = gst_pad_get_pad_template_caps (filter->srcpad);
 
   srccaps = gst_caps_make_writable (srccaps);
 
   gst_caps_set_simple (srccaps,
         "rate", G_TYPE_INT, filter->rate,
-        "halfwaves", G_TYPE_BOOLEAN, halfwaves, NULL);
-
-  new_caps_event = gst_event_new_caps (srccaps);
-  gst_pad_push_event (filter->srcpad, new_caps_event);
+        "halfwaves", G_TYPE_BOOLEAN, filter->halfwaves, NULL);
+  return srccaps;
 }
 
 static gboolean
@@ -201,7 +198,6 @@ read_header (GstBaseTapContainerDec * filter,
     GstBaseTapContainerReadData read_data)
 {
   gsize header_size;
-  gboolean halfwaves;
   const guint8 *header_data;
   GstEvent *new_segment_event;
   GstSegment new_segment;
@@ -215,15 +211,13 @@ read_header (GstBaseTapContainerDec * filter,
   if (header_data == NULL)
     return FALSE;
 
-  filter->header_status = bclass->read_header (filter, header_data, &halfwaves);
+  filter->header_status = bclass->read_header (filter, header_data);
   if (filter->header_status == GST_BASE_TAP_CONVERT_VALID_HEADER) {
-    send_caps_event_downstream (filter, halfwaves);
-    if (GST_PAD_MODE(filter->srcpad) == GST_PAD_MODE_PULL) {
-      // if the upstream element has activated this emelent's source pad in pull mode,
-      // the upstream element might have missed the caps event from this element,
-      // so resend it
-      send_caps_event_downstream (filter, halfwaves);
-    }
+    GstEvent *new_caps_event;
+
+    GstCaps *srccaps = get_src_caps(filter);
+    new_caps_event = gst_event_new_caps (srccaps);
+    gst_pad_push_event (filter->srcpad, new_caps_event);
     gst_segment_init (&new_segment, GST_FORMAT_TIME);
     new_segment_event = gst_event_new_segment (&new_segment);
     gst_pad_push_event (filter->srcpad, new_segment_event);
@@ -455,6 +449,40 @@ gst_basetapcontainerdec_sink_activate_mode (GstPad * sinkpad, GstObject * parent
   return res;
 }
 
+static gboolean
+gst_basetapcontainerdec_pad_query (GstPad * pad, GstObject * parent, GstQuery * query)
+{
+  gboolean res;
+  GstBaseTapContainerDec *filter = GST_BASETAPCONTAINERDEC (parent);
+  GstCaps *caps, *filtercaps, *resultcaps;
+
+  GST_LOG_OBJECT (pad, "%s query", GST_QUERY_TYPE_NAME (query));
+
+  switch (GST_QUERY_TYPE (query)) {
+    case GST_QUERY_CAPS:
+      if (filter->header_status == GST_BASE_TAP_CONVERT_VALID_HEADER) {
+        gst_query_parse_caps (query, &filtercaps);
+        GST_DEBUG_OBJECT (parent, "query caps, matching with: %" GST_PTR_FORMAT, filtercaps);
+        caps = get_src_caps(filter);
+        GST_DEBUG_OBJECT (parent, "query caps, current: %" GST_PTR_FORMAT, caps);
+        if (filtercaps) {
+          resultcaps = gst_caps_intersect_full (filtercaps, caps, GST_CAPS_INTERSECT_FIRST);
+          gst_caps_unref(caps);
+        } else {
+          resultcaps = caps;
+        }
+        gst_query_set_caps_result (query, resultcaps);
+        res = TRUE;
+        break;
+      }
+      // else fallthrough
+    default:
+      res = gst_pad_query_default (pad, parent, query);
+      break;
+  }
+  return res;
+}
+
 /* initialize the new element
  * instantiate pads and add them to element
  * set pad callback functions
@@ -479,6 +507,8 @@ gst_basetapcontainerdec_init (GstBaseTapContainerDec * filter)
       gst_basetapcontainerdec_sink_activate_mode);
   gst_pad_set_activate_function (filter->sinkpad,
       gst_basetapcontainerdec_sink_activate);
+  gst_pad_set_query_function (filter->srcpad,
+      gst_basetapcontainerdec_pad_query);
 
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
