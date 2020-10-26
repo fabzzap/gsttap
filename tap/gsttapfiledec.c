@@ -59,9 +59,6 @@
 #endif
 
 #include <gst/gst.h>
-#include <gst/base/gstadapter.h>
-#include <gst/base/gstbytewriter.h>
-#include <string.h>
 
 #include "gsttapfiledec.h"
 
