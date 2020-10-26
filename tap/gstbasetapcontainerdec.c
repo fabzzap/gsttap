@@ -83,7 +83,7 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
         "rate = (int) { 110840, 111860, 123156, 127840, 138550 }")
     );
 
-G_DEFINE_TYPE (GstBaseTapContainerDec, gst_basetapcontainerdec,
+G_DEFINE_ABSTRACT_TYPE (GstBaseTapContainerDec, gst_basetapcontainerdec,
     GST_TYPE_ELEMENT);
 
 /* GObject vmethod implementations */
@@ -124,10 +124,10 @@ gst_basetapcontainerdec_class_init (GstBaseTapContainerDecClass * klass)
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
-  gst_element_class_set_details_simple (element_class,
-      "Commodore 64 TAP file reader",
+  gst_element_class_set_metadata (element_class,
+      "Commodore tape file reader",
       "Codec/Parser/Audio",
-      "Reads TAP data from TAP files",
+      "Base class to read tape data from tape dump files",
       "Fabrizio Gennari <fabrizio.ge@tiscali.it>");
 
   gst_element_class_add_pad_template (element_class,

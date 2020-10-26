@@ -117,6 +117,13 @@ gst_tapfiledec_class_init (GstTapFileDecClass * bclass)
 {
   GstBaseTapContainerDecClass *parent_class =
       GST_BASETAPCONTAINERDEC_CLASS (bclass);
+  GstElementClass *element_class = GST_ELEMENT_CLASS (bclass);
+  gst_element_class_set_metadata (element_class,
+      "Commodore 64 TAP file reader",
+       "Codec/Parser/Audio",
+      "Reads TAP data from TAP files",
+       "Fabrizio Gennari <fabrizio.ge@tiscali.it>");
+
   parent_class->get_header_size = gst_tapfiledec_get_header_size;
   parent_class->get_container_format = gst_tapfiledec_get_container_format;
   parent_class->read_header = gst_tapfiledec_read_header;
