@@ -70,21 +70,57 @@ GST_DEBUG_CATEGORY_STATIC (gst_basetapcontainerdec_debug);
  *
  * describe the real formats here.
  */
-static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
+
+void
+gst_basetapcontainerdec_sink_factory (GstBaseTapContainerDecClass * klass) {
+  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
+  GstStaticPadTemplate template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("audio/x-tap-tap")
+    GST_STATIC_CAPS (klass->get_container_format())
     );
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&template));
+}
 
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("audio/x-tap, "
-        "rate = (int) { 110840, 111860, 123156, 127840, 138550 }")
+    GST_STATIC_CAPS ("audio/x-tap")
     );
 
-G_DEFINE_ABSTRACT_TYPE (GstBaseTapContainerDec, gst_basetapcontainerdec,
-    GST_TYPE_ELEMENT);
+static void
+gst_basetapcontainerdec_class_init (GstBaseTapContainerDecClass * klass);
+static void
+gst_basetapcontainerdec_init (GstBaseTapContainerDec * filter, GstBaseTapContainerDecClass* class);
+
+GType
+gst_basetapcontainerdec_get_type (void)
+{
+  static volatile gsize basetapcontainerdec_type = 0;
+
+  if (g_once_init_enter (&basetapcontainerdec_type)) {
+    GType _type;
+    static const GTypeInfo basetapcontainerdec_info = {
+      sizeof (GstBaseTapContainerDecClass),
+      NULL,
+      NULL,
+      (GClassInitFunc) gst_basetapcontainerdec_class_init,
+      NULL,
+      NULL,
+      sizeof (GstBaseTapContainerDec),
+      0,
+      (GInstanceInitFunc) gst_basetapcontainerdec_init,
+    };
+
+    _type = g_type_register_static (GST_TYPE_ELEMENT,
+        "GstBaseTapContainerDec", &basetapcontainerdec_info, G_TYPE_FLAG_ABSTRACT);
+
+    g_once_init_leave (&basetapcontainerdec_type, _type);
+  }
+  return basetapcontainerdec_type;
+}
+
 
 /* GObject vmethod implementations */
 static void
@@ -93,6 +129,8 @@ gst_basetapcontainerdec_finalize (GObject * object)
   GstBaseTapContainerDec *dec = GST_BASETAPCONTAINERDEC (object);
   g_object_unref (dec->adapter);
 }
+
+static GstElementClass *gst_basetapcontainerdec_parent_class = NULL;
 
 /* GstElement vmethod implementations */
 static GstStateChangeReturn
@@ -124,16 +162,10 @@ gst_basetapcontainerdec_class_init (GstBaseTapContainerDecClass * klass)
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
-  gst_element_class_set_metadata (element_class,
-      "Commodore tape file reader",
-      "Codec/Parser/Audio",
-      "Base class to read tape data from tape dump files",
-      "Fabrizio Gennari <fabrizio.ge@tiscali.it>");
+  gst_basetapcontainerdec_parent_class = g_type_class_peek_parent (klass);
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&src_factory));
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&sink_factory));
 
   element_class->change_state = gst_basetapcontainerdec_change_state;
   object_class->finalize = gst_basetapcontainerdec_finalize;
@@ -490,9 +522,14 @@ gst_basetapcontainerdec_pad_query (GstPad * pad, GstObject * parent, GstQuery * 
  */
 
 static void
-gst_basetapcontainerdec_init (GstBaseTapContainerDec * filter)
+gst_basetapcontainerdec_init (GstBaseTapContainerDec * filter, GstBaseTapContainerDecClass* class)
 {
-  filter->sinkpad = gst_pad_new_from_static_template (&sink_factory, "sink");
+  /* Setup sink pad */
+  GstPadTemplate *pad_template =
+      gst_element_class_get_pad_template (GST_ELEMENT_CLASS(class), "sink");
+  g_return_if_fail (pad_template != NULL);
+
+  filter->sinkpad = gst_pad_new_from_template (pad_template, "sink");
   gst_pad_set_chain_function (filter->sinkpad,
       GST_DEBUG_FUNCPTR (gst_basetapcontainerdec_chain));
   gst_pad_set_event_function (filter->sinkpad, gst_basetapcontainerdec_event);

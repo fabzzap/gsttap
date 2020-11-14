@@ -107,8 +107,7 @@ static gsize gst_tapfiledec_get_header_size (GstBaseTapContainerDec * filter);
 static GstBaseTapContainerHeaderStatus
 gst_tapfiledec_read_header (GstBaseTapContainerDec * filter,
     const guint8 * header_data);
-static const gchar *gst_tapfiledec_get_container_format (GstBaseTapContainerDec
-    * filter);
+static const gchar *gst_tapfiledec_get_container_format (void);
 static gboolean gst_tapfiledec_read_pulse (GstBaseTapContainerDec * filter,
     GstBaseTapContainerReadData read_data, guint * pulse);
 
@@ -118,6 +117,7 @@ gst_tapfiledec_class_init (GstTapFileDecClass * bclass)
   GstBaseTapContainerDecClass *parent_class =
       GST_BASETAPCONTAINERDEC_CLASS (bclass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (bclass);
+
   gst_element_class_set_metadata (element_class,
       "Commodore 64 TAP file reader",
        "Codec/Parser/Audio",
@@ -128,6 +128,8 @@ gst_tapfiledec_class_init (GstTapFileDecClass * bclass)
   parent_class->get_container_format = gst_tapfiledec_get_container_format;
   parent_class->read_header = gst_tapfiledec_read_header;
   parent_class->read_pulse = gst_tapfiledec_read_pulse;
+
+  gst_basetapcontainerdec_sink_factory (parent_class);
 }
 
 static void
@@ -181,9 +183,9 @@ gst_tapfiledec_read_header (GstBaseTapContainerDec * filter,
 }
 
 static const gchar *
-gst_tapfiledec_get_container_format (GstBaseTapContainerDec * filter)
+gst_tapfiledec_get_container_format (void)
 {
-  return "TAP Commodore tape image file";
+  return "audio/x-tap-tap";
 }
 
 static gboolean
