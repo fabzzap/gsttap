@@ -103,7 +103,6 @@ static gsize gst_dmpdec_get_header_size (GstBaseTapContainerDec * filter);
 static GstBaseTapContainerHeaderStatus
 gst_dmpdec_read_header (GstBaseTapContainerDec * filter,
     const guint8 * header_data);
-static const gchar *gst_dmpdec_get_container_format (void);
 static gboolean gst_dmpdec_read_pulse (GstBaseTapContainerDec * filter,
     GstBaseTapContainerReadData read_data, guint * pulse);
 
@@ -121,11 +120,10 @@ gst_dmpdec_class_init (GstDmpDecClass * gclass)
       "Fabrizio Gennari <fabrizio.ge@tiscali.it>");
 
   parent_class->get_header_size = gst_dmpdec_get_header_size;
-  parent_class->get_container_format = gst_dmpdec_get_container_format;
   parent_class->read_header = gst_dmpdec_read_header;
   parent_class->read_pulse = gst_dmpdec_read_pulse;
 
-  gst_basetapcontainerdec_sink_factory (parent_class);
+  gst_basetapcontainerdec_sink_factory (parent_class, "audio/x-tap-dmp");
 }
 
 /* chain function
@@ -167,12 +165,6 @@ gst_dmpdec_read_header (GstBaseTapContainerDec * filter,
     return GST_BASE_TAP_CONVERT_NO_VALID_HEADER;
 
   return GST_BASE_TAP_CONVERT_VALID_HEADER;
-}
-
-static const gchar *
-gst_dmpdec_get_container_format (void)
-{
-  return "audio/x-tap-dmp";
 }
 
 static gboolean

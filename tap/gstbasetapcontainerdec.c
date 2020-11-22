@@ -72,12 +72,12 @@ GST_DEBUG_CATEGORY_STATIC (gst_basetapcontainerdec_debug);
  */
 
 void
-gst_basetapcontainerdec_sink_factory (GstBaseTapContainerDecClass * klass) {
+gst_basetapcontainerdec_sink_factory (GstBaseTapContainerDecClass * klass, const gchar *container_format) {
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GstStaticPadTemplate template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (klass->get_container_format())
+    GST_STATIC_CAPS (container_format)
     );
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&template));

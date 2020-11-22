@@ -107,7 +107,6 @@ static gsize gst_tapfiledec_get_header_size (GstBaseTapContainerDec * filter);
 static GstBaseTapContainerHeaderStatus
 gst_tapfiledec_read_header (GstBaseTapContainerDec * filter,
     const guint8 * header_data);
-static const gchar *gst_tapfiledec_get_container_format (void);
 static gboolean gst_tapfiledec_read_pulse (GstBaseTapContainerDec * filter,
     GstBaseTapContainerReadData read_data, guint * pulse);
 
@@ -125,11 +124,10 @@ gst_tapfiledec_class_init (GstTapFileDecClass * bclass)
        "Fabrizio Gennari <fabrizio.ge@tiscali.it>");
 
   parent_class->get_header_size = gst_tapfiledec_get_header_size;
-  parent_class->get_container_format = gst_tapfiledec_get_container_format;
   parent_class->read_header = gst_tapfiledec_read_header;
   parent_class->read_pulse = gst_tapfiledec_read_pulse;
 
-  gst_basetapcontainerdec_sink_factory (parent_class);
+  gst_basetapcontainerdec_sink_factory (parent_class, "audio/x-tap-tap");
 }
 
 static void
@@ -180,12 +178,6 @@ gst_tapfiledec_read_header (GstBaseTapContainerDec * filter,
   filter->halfwaves = decoder->version == 2;
 
   return GST_BASE_TAP_CONVERT_VALID_HEADER;
-}
-
-static const gchar *
-gst_tapfiledec_get_container_format (void)
-{
-  return "audio/x-tap-tap";
 }
 
 static gboolean
