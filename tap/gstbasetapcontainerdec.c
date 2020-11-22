@@ -141,8 +141,7 @@ gst_basetapcontainerdec_change_state (GstElement * element,
 
   switch (transition) {
     case GST_STATE_CHANGE_READY_TO_PAUSED:
-    case GST_STATE_CHANGE_PAUSED_TO_READY:
-      dec->header_status = GST_BASE_TAP_CONVERT_NO_HEADER_YET;
+      dec->header_status = GST_BASE_TAP_CONVERT_START;
       dec->timestamp = 0;
       gst_adapter_clear (dec->adapter);
       break;
@@ -179,10 +178,10 @@ read_from_adapter (GstBaseTapContainerDec * filter, guint numbytes)
 {
   const guint8 *retval;
 
-  if (filter->numbytes_from_adapter < filter->in_offset + numbytes)
+  if (filter->numbytes_from_adapter < filter->adapter_offset + numbytes)
     return NULL;
-  retval = filter->bytes_from_adapter + filter->in_offset;
-  filter->in_offset += numbytes;
+  retval = filter->bytes_from_adapter + filter->adapter_offset;
+  filter->adapter_offset += numbytes;
   return retval;
 }
 
@@ -257,7 +256,6 @@ read_header (GstBaseTapContainerDec * filter,
         gst_tag_list_new (GST_TAG_CONTAINER_FORMAT,
         "TAP Commodore tape image file", NULL);
     gst_pad_push_event (filter->srcpad, gst_event_new_tag (taglist));
-    filter->to_flush = filter->in_offset;
   }
   return TRUE;
 }
@@ -271,12 +269,10 @@ get_pulse_from_tap (GstBaseTapContainerDec * filter,
   GstBaseTapContainerDecClass *bclass =
       GST_BASETAPCONTAINERDEC_GET_CLASS (filter);
 
-  filter->initial_offset = filter->in_offset;
   g_assert (bclass->read_pulse != NULL);
   if (!bclass->read_pulse (filter, read_data, &pulse))
     return FALSE;
   gst_byte_writer_put_data (writer, (const guint8 *) &pulse, sizeof (pulse));
-  filter->to_flush = filter->in_offset;
   if (duration)
     *duration += pulse;
   return TRUE;
@@ -300,8 +296,7 @@ gst_basetapcontainerdec_chain (GstPad * pad, GstObject * parent,
   filter->numbytes_from_adapter = gst_adapter_available (filter->adapter);
   filter->bytes_from_adapter =
       gst_adapter_map (filter->adapter, filter->numbytes_from_adapter);
-  filter->in_offset = 0;
-  filter->to_flush = 0;
+  filter->adapter_offset = 0;
   if (filter->header_status == GST_BASE_TAP_CONVERT_NO_HEADER_YET) {
     gboolean read_header_ret = read_header (filter, read_from_adapter);
     /* Don't go past this point before finishing with the header */
@@ -311,7 +306,7 @@ gst_basetapcontainerdec_chain (GstPad * pad, GstObject * parent,
   }
   while (get_pulse_from_tap (filter, read_from_adapter, writer, &duration));
   gst_adapter_unmap (filter->adapter);
-  gst_adapter_flush (filter->adapter, filter->to_flush);
+  gst_adapter_flush (filter->adapter, filter->adapter_offset);
   if (filter->header_status == GST_BASE_TAP_CONVERT_NO_VALID_HEADER)
     ret = GST_FLOW_ERROR;
   else
@@ -376,11 +371,26 @@ gst_basetapcontainerdec_loop (GstPad * pad)
 {
   GstFlowReturn ret = GST_FLOW_ERROR;
   GstBaseTapContainerDec *filter = GST_BASETAPCONTAINERDEC (GST_PAD_PARENT (pad));
-  GstBuffer *buf;
+  GstBuffer *buf = NULL;
+  GstEvent *event;
+  gchar *stream_id;
 
   GST_LOG_OBJECT (filter, "process data");
 
   switch (filter->header_status) {
+    case GST_BASE_TAP_CONVERT_START:
+      GST_DEBUG_OBJECT (filter, "start stream");
+      stream_id =
+          gst_pad_create_stream_id (filter->srcpad, GST_ELEMENT_CAST (filter), NULL);
+      event = gst_event_new_stream_start (stream_id);
+      gst_event_set_group_id (event, gst_util_group_id_next ());
+      if (gst_pad_push_event (filter->srcpad, event)) {
+        ret = GST_FLOW_OK;
+        filter->header_status = GST_BASE_TAP_CONVERT_NO_HEADER_YET;
+      }
+      g_free (stream_id);
+
+      break;
     case GST_BASE_TAP_CONVERT_NO_HEADER_YET:
       GST_DEBUG_OBJECT (filter, "no header yet");
       if (read_header (filter, read_from_peer))
@@ -389,8 +399,9 @@ gst_basetapcontainerdec_loop (GstPad * pad)
 
     case GST_BASE_TAP_CONVERT_VALID_HEADER:
       GST_DEBUG_OBJECT (filter, "getting data");
-      ret = gst_basetapcontainerdec_get_range (pad, GST_OBJECT(filter), 0, BASETAPCONTAINERDEC_PULL_SIZE, &buf);
+      ret = gst_pad_pull_range (filter->sinkpad, filter->in_offset, BASETAPCONTAINERDEC_PULL_SIZE, &buf);
       if (ret == GST_FLOW_OK) {
+        filter->in_offset += gst_buffer_get_size (buf);
         ret = gst_basetapcontainerdec_chain (pad, GST_OBJECT(filter), buf);
       }
       break;
@@ -551,5 +562,5 @@ gst_basetapcontainerdec_init (GstBaseTapContainerDec * filter, GstBaseTapContain
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
 
   filter->adapter = gst_adapter_new ();
-  filter->header_status = GST_BASE_TAP_CONVERT_NO_HEADER_YET;
+  filter->header_status = GST_BASE_TAP_CONVERT_START;
 }

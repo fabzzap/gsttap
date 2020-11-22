@@ -69,6 +69,7 @@ typedef struct _GstBaseTapContainerDecClass GstBaseTapContainerDecClass;
 
 typedef enum
 {
+  GST_BASE_TAP_CONVERT_START,
   GST_BASE_TAP_CONVERT_NO_HEADER_YET,
   GST_BASE_TAP_CONVERT_NO_VALID_HEADER,
   GST_BASE_TAP_CONVERT_VALID_HEADER
@@ -92,12 +93,11 @@ struct _GstBaseTapContainerDec
   GstAdapter *adapter;
   const guint8 *bytes_from_adapter;
   guint numbytes_from_adapter;
-  gsize to_flush;
+  guint adapter_offset;
 
   // pull mode
   GstBuffer *pulled_bytes;
   GstMapInfo pulled_bytes_info;
-  guint initial_offset;
 };
 
 typedef const guint8* (*GstBaseTapContainerReadData) (GstBaseTapContainerDec * filter, guint numbytes);
