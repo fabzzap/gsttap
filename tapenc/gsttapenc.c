@@ -107,6 +107,7 @@ struct _GstTapEnc
   GCond cond;
   GMutex mutex;
   gboolean is_eos;
+  gint samplerate;
 };
 
 struct _GstTapEncClass
@@ -144,6 +145,26 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
 #define gst_tapenc_parent_class parent_class
 G_DEFINE_TYPE (GstTapEnc, gst_tapenc, GST_TYPE_ELEMENT);
 
+static void
+gst_tapenc_sends_caps_event (GstTapEnc *filter) {
+      GstCaps *srccaps;
+      GstEvent *new_caps_event;
+      GstStructure *structure;
+      srccaps =
+          gst_caps_make_writable (gst_pad_get_pad_template_caps
+          (filter->srcpad));
+      GST_DEBUG_OBJECT (srccaps, "caps before");
+      structure = gst_caps_get_structure (srccaps, 0);
+      gst_structure_set (structure,
+          "rate", G_TYPE_INT, filter->samplerate,
+          "halfwaves", G_TYPE_BOOLEAN, filter->halfwaves, NULL);
+      GST_DEBUG_OBJECT (srccaps, "caps after");
+      if (filter->tap)
+        tapenc_toggle_trigger_on_both_edges (filter->tap, filter->halfwaves);
+      new_caps_event = gst_event_new_caps (srccaps);
+      gst_pad_push_event (filter->srcpad, new_caps_event);
+}
+
 /* GObject vmethod implementations */
 
 static void
@@ -174,8 +195,7 @@ gst_tapenc_set_property (GObject * object, guint prop_id,
     }
     case PROP_HALFWAVES:
       filter->halfwaves = g_value_get_boolean (value);
-      if (filter->tap)
-        tapenc_toggle_trigger_on_both_edges (filter->tap, filter->halfwaves);
+      gst_tapenc_sends_caps_event (filter);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -274,37 +294,21 @@ gst_tapenc_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
     {
       GstCaps *caps;
       GstStructure *structure;
-      GstCaps *srccaps;
-      gint samplerate;
-      GstEvent *new_caps_event;
       GstEvent *new_segment_event;
       GstSegment new_segment;
 
       gst_event_parse_caps (event, &caps);
       structure = gst_caps_get_structure (caps, 0);
 
-      if (!gst_structure_get_int (structure, "rate", &samplerate)) {
+      if (!gst_structure_get_int (structure, "rate", &filter->samplerate)) {
         GST_ERROR_OBJECT (filter, "input caps have no sample rate field");
         return FALSE;
       }
 
-      srccaps =
-          gst_caps_make_writable (gst_pad_get_pad_template_caps
-          (filter->srcpad));
-      GST_DEBUG_OBJECT (srccaps, "caps before");
-      structure = gst_caps_get_structure (srccaps, 0);
-      gst_structure_set (structure,
-          "rate", G_TYPE_INT, samplerate,
-          "halfwaves", G_TYPE_BOOLEAN, filter->halfwaves, NULL);
-      GST_DEBUG_OBJECT (srccaps, "caps after");
-
       filter->tap = tapenc_init2 (filter->min_duration,
           filter->sensitivity, filter->initial_threshold, filter->inverted);
+      gst_tapenc_sends_caps_event(filter);
 
-      tapenc_toggle_trigger_on_both_edges (filter->tap, filter->halfwaves);
-
-      new_caps_event = gst_event_new_caps (srccaps);
-      gst_pad_push_event (filter->srcpad, new_caps_event);
       gst_segment_init (&new_segment, GST_FORMAT_TIME);
       new_segment_event = gst_event_new_segment (&new_segment);
       gst_pad_push_event (filter->srcpad, new_segment_event);
