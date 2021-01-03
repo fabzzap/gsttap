@@ -163,8 +163,15 @@ gst_tapenc_set_property (GObject * object, guint prop_id,
       filter->initial_threshold = (guchar) g_value_get_uint (value);
       break;
     case PROP_INVERTED:
-      filter->inverted = g_value_get_boolean (value);
+    {
+      gboolean inverted = g_value_get_boolean (value);
+      if (inverted != filter->inverted) {
+        filter->inverted = inverted;
+        if (filter->tap)
+          tapenc_invert (filter->tap);
+      }
       break;
+    }
     case PROP_HALFWAVES:
       filter->halfwaves = g_value_get_boolean (value);
       if (filter->tap)
